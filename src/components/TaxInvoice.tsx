@@ -115,9 +115,8 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
     vehicleNo: ''
   }
 }, ref) => {
-  const { getProductById, getUserById, getBranchById } = useStore();
+  const { getProductById, getUserById } = useStore();
   const salesman = getUserById(sale.salesmanId);
-  const branch = getBranchById(sale.branchId);
 
   // Get GST rates from sale or use defaults
   const cgstRate = sale.cgstRate || 2.5;
@@ -153,7 +152,6 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
 
     // Price is inclusive of GST, calculate backwards using sale's GST rates
     const taxableValue = (item.total * 100) / (100 + totalGstRate);
-    const gstAmount = item.total - taxableValue;
     const cgst = (taxableValue * cgstRate) / 100;
     const sgst = (taxableValue * sgstRate) / 100;
 

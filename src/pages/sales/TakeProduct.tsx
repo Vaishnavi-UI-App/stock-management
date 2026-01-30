@@ -28,14 +28,14 @@ export function TakeProduct() {
     }));
   };
 
-  const handleTakeProduct = (productId: string) => {
+  const handleTakeProduct = async (productId: string) => {
     const qty = quantities[productId];
     if (!qty || qty <= 0) {
       setMessage({ type: 'error', text: 'Please enter a valid quantity' });
       return;
     }
 
-    const success = takeProductFromBranch(
+    const success = await takeProductFromBranch(
       currentUser?.id || '',
       branchId,
       productId,
@@ -52,14 +52,14 @@ export function TakeProduct() {
     setTimeout(() => setMessage(null), 3000);
   };
 
-  const handleReturnProduct = (productId: string) => {
+  const handleReturnProduct = async (productId: string) => {
     const qty = quantities[productId];
     if (!qty || qty <= 0) {
       setMessage({ type: 'error', text: 'Please enter a valid quantity' });
       return;
     }
 
-    const success = returnProductToBranch(
+    const success = await returnProductToBranch(
       currentUser?.id || '',
       branchId,
       productId,

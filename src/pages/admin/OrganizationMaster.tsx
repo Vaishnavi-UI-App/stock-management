@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Building2, Save, Upload, Trash2, Eye, X, FileText, Globe, Phone, Mail, MapPin, CreditCard, Landmark, Clock, Hash } from 'lucide-react';
+import { Building2, Save, Upload, Trash2, Eye, X, FileText, MapPin, CreditCard, Landmark, Clock } from 'lucide-react';
 import { organizationApi } from '../../services/api';
 import '../stock/Stock.css';
 

@@ -4,7 +4,8 @@ import { ordersApi } from '../../services/api';
 import { useStore } from '../../store/useStore';
 import type { Order } from '../../types';
 import { PurchaseInvoice } from '../../components/PurchaseInvoice';
-import { TaxInvoice } from '../../components/TaxInvoice';
+// TaxInvoice available if needed
+
 import { format } from 'date-fns';
 import '../sales/Sales.css';
 

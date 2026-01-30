@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Plus, Edit2, Trash2, Mail, Phone, X, Building2, User, CreditCard, Heart, AlertCircle, IndianRupee, Camera, Upload, Eye, FileText, Building, Calendar, Shield, Briefcase, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Building2, User, Camera, Upload, Eye, FileText, Building, Briefcase, ChevronDown, ChevronUp } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import type { UserRole } from '../../types';
 import './Stock.css';
@@ -141,6 +141,8 @@ export function Users() {
         bloodGroup: '',
         emergencyContact: '',
         monthlySalary: '',
+        bankName: '',
+        bankAccountNo: '',
         bankAccountHolder: '',
         bankIfscCode: '',
         bankBranchName: '',
@@ -150,7 +152,18 @@ export function Users() {
         esicNo: '',
         uanNo: '',
         licenseNo: '',
-        medicalInsurance: ''
+        medicalInsurance: '',
+        designation: '',
+        location: '',
+        basicSalary: '',
+        houseRentAllowance: '',
+        conveyanceAllowance: '',
+        medicalAllowance: '',
+        uniformAllowance: '',
+        educationAllowance: '',
+        ltaAllowance: '',
+        specialAllowance: '',
+        pfDeduction: ''
       });
       setEditingUser(null);
     }

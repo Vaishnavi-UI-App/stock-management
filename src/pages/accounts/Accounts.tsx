@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, Check, X, Edit2, Eye, Clock, AlertCircle, Printer } from 'lucide-react';
+import { FileText, Check, X, Edit2, Eye, Clock } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { TaxInvoice } from '../../components/TaxInvoice';
 import type { Sale } from '../../types';
@@ -105,9 +105,7 @@ export function Accounts() {
     setViewMode('preview');
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+
 
   if (viewMode === 'preview' && selectedSale) {
     return (

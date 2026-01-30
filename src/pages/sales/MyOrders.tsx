@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Package, Search, Plus, Minus, Trash2, Printer, CheckCircle, Clock, Send, ShoppingBag, Eye, XCircle, MapPin } from 'lucide-react';
+import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, ShoppingBag, Eye, MapPin } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { ordersApi } from '../../services/api';
 import type { OrderItem, Order } from '../../types';

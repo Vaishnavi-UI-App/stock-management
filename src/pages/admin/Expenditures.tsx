@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
-  Receipt, Search, Download, Calendar, User,
+  Receipt, Download,
   Clock, CheckCircle, XCircle, Eye, X, Filter
 } from 'lucide-react';
-import { useStore } from '../../store/useStore';
 import { expendituresApi, usersApi } from '../../services/api';
 import type { Expenditure, User as UserType } from '../../types';
 import { format } from 'date-fns';
 import '../stock/Stock.css';
 
 export function Expenditures() {
-  const { currentUser } = useStore();
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [users, setUsers] = useState<UserType[]>([]);
   const [isLoading, setIsLoading] = useState(false);

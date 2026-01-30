@@ -84,9 +84,8 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
     upiId: '7276291431@kotak'
   }
 }, ref) => {
-  const { getProductById, getUserById, getBranchById } = useStore();
+  const { getProductById, getUserById } = useStore();
   const salesman = getUserById(order.salesmanId);
-  const branch = getBranchById(order.branchId);
 
   // Get GST rates from order or use defaults
   const cgstRate = order.cgstRate || 2.5;
@@ -121,7 +120,6 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
 
     // Price is inclusive of GST, calculate backwards using order's GST rates
     const taxableValue = (item.total * 100) / (100 + totalGstRate);
-    const gstAmount = item.total - taxableValue;
     const cgst = (taxableValue * cgstRate) / 100;
     const sgst = (taxableValue * sgstRate) / 100;
 

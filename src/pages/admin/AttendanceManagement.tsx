@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Clock, CheckCircle, XCircle, Users, Calendar, ChevronLeft, ChevronRight, Eye, X, MapPin, Monitor, Image, AlertTriangle, Download, FileText } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, Calendar, ChevronLeft, ChevronRight, Eye, X, MapPin, Image, AlertTriangle, Download, FileText } from 'lucide-react';
 import { attendanceApi, organizationApi } from '../../services/api';
 import { useStore } from '../../store/useStore';
 import '../stock/Stock.css';
@@ -204,12 +204,6 @@ export function AttendanceManagement() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadAll = () => {
-    const data = activeTab === 'history' ? attendance : (cardFilter !== 'all' ? getCardFilteredData() : allMonthData);
-    const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-    downloadXLS(data, `All_Employees_Attendance_${monthName}`);
-  };
-
   const handleDownloadEmployee = (userId: string, userName: string) => {
     const data = (activeTab === 'history' ? attendance : allMonthData).filter(a => a.userId === userId || a.user?.id === userId);
     const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
@@ -302,7 +296,6 @@ export function AttendanceManagement() {
     const totalDeduction = pTax + pf + lopDeduction + advancePaid;
 
     const netPay = totalEarning - (pTax + pf + advancePaid);
-    const dateStr = `${slipMonth}/1/${slipYear}`;
     const formattedDate = new Date(slipYear, slipMonth - 1, 1).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
     // Number to words
@@ -329,38 +322,38 @@ export function AttendanceManagement() {
       <html><head><title>Salary Slip - ${name} - ${monthName} ${slipYear}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #333; background: #fff; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 5px; color: #333; background: #fff; }
         .slip { max-width: 800px; margin: auto; border: 2px solid #00a651; }
-        .header { display: flex; align-items: center; padding: 15px 20px; border-bottom: 2px solid #00a651; }
-        .header-logo { width: 80px; height: 80px; margin-right: 15px; }
+        .header { display: flex; align-items: center; padding: 8px 15px; border-bottom: 2px solid #00a651; }
+        .header-logo { width: 60px; height: 60px; margin-right: 10px; }
         .header-logo img { width: 100%; height: 100%; object-fit: contain; }
         .header-info { flex: 1; }
-        .header-info h1 { font-size: 18px; color: #00a651; margin-bottom: 2px; }
-        .header-info p { font-size: 10px; color: #555; line-height: 1.4; }
+        .header-info h1 { font-size: 15px; color: #00a651; margin-bottom: 1px; }
+        .header-info p { font-size: 9px; color: #555; line-height: 1.3; }
         .header-right { text-align: right; }
-        .header-right p { font-size: 10px; color: #555; line-height: 1.5; }
-        .date-bar { text-align: right; padding: 6px 20px; background: #e8eaf6; font-size: 12px; font-weight: 600; color: #00a651; border-bottom: 1px solid #c5cae9; }
-        .emp-row { display: flex; border-bottom: 1px solid #e0e0e0; font-size: 12px; }
-        .emp-row .lbl { width: 140px; padding: 6px 12px; font-weight: 600; color: #333; background: #f5f5f5; border-right: 1px solid #e0e0e0; }
-        .emp-row .val { flex: 1; padding: 6px 12px; }
+        .header-right p { font-size: 9px; color: #555; line-height: 1.4; }
+        .date-bar { text-align: right; padding: 4px 15px; background: #e8eaf6; font-size: 11px; font-weight: 600; color: #00a651; border-bottom: 1px solid #c5cae9; }
+        .emp-row { display: flex; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
+        .emp-row .lbl { width: 130px; padding: 3px 10px; font-weight: 600; color: #333; background: #f5f5f5; border-right: 1px solid #e0e0e0; }
+        .emp-row .val { flex: 1; padding: 3px 10px; }
         .emp-grid { display: grid; grid-template-columns: 1fr 1fr; }
         .emp-grid .emp-row { border-right: 1px solid #e0e0e0; }
         .emp-grid .emp-row:nth-child(even) { border-right: none; }
-        .payslip-title { text-align: center; padding: 8px; background: #00a651; color: white; font-size: 13px; font-weight: 600; letter-spacing: 1px; }
+        .payslip-title { text-align: center; padding: 5px; background: #00a651; color: white; font-size: 12px; font-weight: 600; letter-spacing: 1px; }
         .salary-table { width: 100%; border-collapse: collapse; }
-        .salary-table th { background: #e8eaf6; color: #00a651; padding: 8px 12px; font-size: 12px; text-align: left; border: 1px solid #c5cae9; }
-        .salary-table td { padding: 6px 12px; font-size: 12px; border: 1px solid #e0e0e0; }
+        .salary-table th { background: #e8eaf6; color: #00a651; padding: 4px 10px; font-size: 11px; text-align: left; border: 1px solid #c5cae9; }
+        .salary-table td { padding: 3px 10px; font-size: 11px; border: 1px solid #e0e0e0; }
         .salary-table .amount { text-align: right; font-weight: 500; }
         .salary-table .total-row td { font-weight: 700; background: #e8eaf6; border-top: 2px solid #00a651; }
-        .net-section { padding: 10px 20px; display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px solid #e0e0e0; }
+        .net-section { padding: 6px 15px; display: flex; justify-content: space-between; font-size: 12px; border-bottom: 1px solid #e0e0e0; }
         .net-section strong { color: #00a651; }
-        .words-section { padding: 8px 20px; font-size: 11px; border-bottom: 1px solid #e0e0e0; }
-        .sign-section { display: flex; justify-content: space-between; padding: 20px 30px 10px; min-height: 90px; }
-        .sign-box { text-align: center; font-size: 11px; }
-        .sign-box .line { border-top: 1px solid #333; width: 160px; margin-top: 50px; margin-bottom: 4px; }
-        .footer-bar { padding: 8px 20px; background: #00a651; color: white; font-size: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .words-section { padding: 5px 15px; font-size: 10px; border-bottom: 1px solid #e0e0e0; }
+        .sign-section { display: flex; justify-content: space-between; padding: 10px 30px 5px; min-height: 70px; }
+        .sign-box { text-align: center; font-size: 10px; }
+        .sign-box .line { border-top: 1px solid #333; width: 160px; margin-top: 30px; margin-bottom: 3px; }
+        .footer-bar { padding: 5px 15px; background: #00a651; color: white; font-size: 9px; display: flex; justify-content: space-between; align-items: center; }
         .footer-bar a { color: #bbdefb; text-decoration: none; }
-        @media print { body { padding: 0; } .slip { border: 2px solid #00a651; } }
+        @media print { body { padding: 0; margin: 0; } .slip { border: 2px solid #00a651; } @page { margin: 5mm; size: A4; } }
       </style></head><body>
       <div class="slip">
         <!-- Header -->
@@ -370,8 +363,7 @@ export function AttendanceManagement() {
           </div>
           <div class="header-info">
             <h1>DYNAMIC CROP SCIENCE INDIA PVT LTD</h1>
-            <p>Office 707, B wing, Tanish Park, Alandi Road, Charoli Bk, PUNE</p>
-            <p>FACTORY: Bamboli, Chakan MIDC PHASE-II, CHAKAN, Pune, Maharashtra, 412105</p>
+            <p>FACTORY: S R NO - 96/2, Godown No. 5, Vighnaharta Services, Charholi Khurd, Malakar Road, Alandi, Pune, Maharashtra, 412105</p>
             <p>Email: dynamiccropscience@gmail.com | Ph: 7020455358</p>
           </div>
           <div class="header-right">
@@ -391,8 +383,8 @@ export function AttendanceManagement() {
           <div class="emp-row"><div class="lbl">DESIGNATION</div><div class="val">: ${designation}</div></div>
           <div class="emp-row"><div class="lbl">LOCATION</div><div class="val">: ${empLocation}</div></div>
           <div class="emp-row"><div class="lbl">EMPLOYEE CODE</div><div class="val">: ${emp?.employeeCode || 'N/A'}</div></div>
-          <div class="emp-row"><div class="lbl">BANK NAME</div><div class="val">: ${emp?.bankName || 'N/A'}</div></div>
-          <div class="emp-row"><div class="lbl">A/C NO</div><div class="val">: ${emp?.bankAccountNo || 'N/A'}</div></div>
+          <div class="emp-row"><div class="lbl">UAN NO</div><div class="val">: ${emp?.uanNo || 'N/A'}</div></div>
+          <div class="emp-row"><div class="lbl">ESIC NO</div><div class="val">: ${emp?.esicNo || 'N/A'}</div></div>
           <div class="emp-row"><div class="lbl">DAYS IN MONTH</div><div class="val">: ${daysInMonth}</div></div>
           <div class="emp-row"><div class="lbl">PRESENT DAYS</div><div class="val">: ${presentDays}${lateDays ? ' (+ ' + lateDays + ' late)' : ''}</div></div>
           <div class="emp-row"><div class="lbl">HALF DAYS</div><div class="val">: ${halfDays}</div></div>
@@ -486,17 +478,24 @@ export function AttendanceManagement() {
           <strong>Rupees in Words :</strong> ${numToWords(netPay)}
         </div>
 
+        <!-- Bank Details -->
+        <div class="bank-details" style="display:flex; padding:6px 20px; font-size:11px; border-bottom:1px solid #e0e0e0; gap:10px;">
+          <div style="flex:1;"><strong>A/C NO:</strong> ${emp?.bankAccountNo || 'N/A'}</div>
+          <div style="flex:1;"><strong>Bank Name:</strong> ${emp?.bankName || 'N/A'}</div>
+          <div style="flex:1;"><strong>IFSC NO:</strong> ${emp?.bankIfscCode || 'N/A'}</div>
+        </div>
+
         <!-- Signatures -->
-        <div class="sign-section">
-          <div class="sign-box">
+        <div style="display:flex; justify-content:space-between; padding:10px 40px 5px; min-height:70px;">
+          <div style="text-align:center; font-size:10px;">
             <p>For Dynamic Crop Science India Pvt Ltd.</p>
-            <img src="/stamp.jpeg" alt="Company Stamp" style="width:120px;height:auto;margin-top:5px;object-fit:contain;" onerror="this.style.display='none'" />
-            <div class="line"></div>
+            <img src="/stamp1.jpeg" alt="Company Stamp" style="width:120px;height:auto;margin-top:5px;object-fit:contain;" onerror="this.style.display='none'" />
+            <div style="border-top:1px solid #333; width:160px; margin-top:10px; margin-bottom:3px;"></div>
             <p><strong>Authorised Sign</strong></p>
           </div>
-          <div class="sign-box">
+          <div style="text-align:center; font-size:10px;">
             <p>Received / Accepted</p>
-            <div class="line"></div>
+            <div style="border-top:1px solid #333; width:160px; margin-top:80px; margin-bottom:3px;"></div>
             <p><strong>${name}</strong></p>
           </div>
         </div>
@@ -1208,7 +1207,6 @@ export function AttendanceManagement() {
                   const totalEarnFull = (e?.basicSalary || 0) + (e?.houseRentAllowance || 0) + (e?.conveyanceAllowance || 0) + (e?.medicalAllowance || 0) + (e?.uniformAllowance || 0) + (e?.educationAllowance || 0) + (e?.ltaAllowance || 0) + (e?.specialAllowance || 0);
                   const totalEarn = Math.round(totalEarnFull * pFactor);
                   const lopDed = totalEarnFull - totalEarn;
-                  const totalDed = 200 + (e?.pfDeduction || 0) + lopDed;
                   const net = totalEarn - (200 + (e?.pfDeduction || 0));
                   return (
                     <div style={{ marginTop: '8px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>

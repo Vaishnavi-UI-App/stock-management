@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Receipt, Plus, Calendar, FileText, Upload, Trash2,
+  Receipt, Plus, FileText, Upload, Trash2,
   Clock, CheckCircle, XCircle, Eye, X, Download
 } from 'lucide-react';
-import { useStore } from '../../store/useStore';
 import { expendituresApi } from '../../services/api';
 import type { Expenditure } from '../../types';
 import { format } from 'date-fns';
 import './Sales.css';
 
 export function MyExpenditures() {
-  const { currentUser } = useStore();
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);

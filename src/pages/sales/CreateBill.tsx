@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Package, Search, Plus, Minus, Trash2, Printer, CheckCircle, Clock, Send, MapPin } from 'lucide-react';
+import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, MapPin } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import type { SaleItem } from '../../types';
 import { TaxInvoice } from '../../components/TaxInvoice';
@@ -44,7 +44,7 @@ export function CreateBill() {
   const [vehicleNo, setVehicleNo] = useState('');
 
   const [showBill, setShowBill] = useState(false);
-  const [createdSale, setCreatedSale] = useState<ReturnType<typeof createSale> | null>(null);
+  const [createdSale, setCreatedSale] = useState<Awaited<ReturnType<typeof createSale>> | null>(null);
   const [billSubmitted, setBillSubmitted] = useState(false);
   const billRef = useRef<HTMLDivElement>(null);
   const [billLocation, setBillLocation] = useState('');
@@ -210,7 +210,9 @@ export function CreateBill() {
         poNumber,
         vehicleNo,
         billLocation: billLocation || undefined,
-        saleDate: new Date()
+        saleDate: new Date(),
+        balanceDue: finalAmount - amountPaid,
+        paymentStatus: amountPaid >= finalAmount ? 'paid' : amountPaid > 0 ? 'partial' : 'unpaid'
       });
 
       setCreatedSale(sale);
