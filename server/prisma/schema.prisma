@@ -1,0 +1,545 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Organization Master
+model Organization {
+  id                  String   @id @default(cuid())
+  orgName             String
+  orgCode             String?  @unique
+  businessType        String?
+  industry            String?
+  logoUrl             String?  @db.Text
+  gstNo               String?
+  panNo               String?
+  tanNo               String?
+  cinNo               String?
+  email               String?
+  phone               String?
+  altPhone            String?
+  website             String?
+  registeredAddress   String?  @db.Text
+  factoryAddress      String?  @db.Text
+  city                String?
+  state               String?
+  stateCode           String?
+  pincode             String?
+  country             String?  @default("India")
+  invoicePrefix       String?  @default("INV")
+  currency            String?  @default("INR")
+  bankName            String?
+  bankAccountNo       String?
+  bankAccountHolder   String?
+  ifscCode            String?
+  bankBranch          String?
+  upiId               String?
+  workingDays         String?
+  workingHours        String?
+  timezone            String?  @default("Asia/Kolkata")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  status              Boolean  @default(true)
+
+  // Relations
+  documents   OrganizationDocument[]
+}
+
+// Organization Documents
+model OrganizationDocument {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documentName   String
+  documentType   String?  // gst_certificate, pan_card, trade_license, etc.
+  fileData       String   @db.LongText
+  fileName       String?
+  fileType       String?  // image/png, application/pdf, etc.
+  uploadedBy     String?
+  createdAt      DateTime @default(now())
+}
+
+// User model
+model User {
+  id               String   @id @default(cuid())
+  name             String
+  email            String   @unique
+  password         String
+  role             UserRole
+  phone            String
+  branchId         String?
+  branch           Branch?  @relation(fields: [branchId], references: [id])
+  // Additional employee fields
+  profilePhoto     String?  @db.Text
+  employeeCode     String?  @unique
+  aadharCard       String?
+  aadharCardDoc    String?  @db.Text
+  panCard          String?
+  panCardDoc       String?  @db.Text
+  bloodGroup       String?
+  emergencyContact String?
+  monthlySalary    Float?
+  // Bank Details
+  bankName          String?
+  bankAccountNo     String?
+  bankAccountHolder String?
+  bankIfscCode      String?
+  bankBranchName    String?
+  bankPassbookDoc   String?  @db.Text
+  // Employment Details
+  dateOfJoining    DateTime?
+  pfNo             String?    // Provident Fund Number
+  esicNo           String?    // ESIC Number
+  uanNo            String?    // Universal Account Number
+  licenseNo        String?    // License Number
+  medicalInsurance String?    // Medical Insurance Number
+  designation      String?    // Custom designation text
+  location         String?    // Work location
+  // Salary Allowances
+  basicSalary          Float?
+  houseRentAllowance   Float?
+  conveyanceAllowance  Float?
+  medicalAllowance     Float?
+  uniformAllowance     Float?
+  educationAllowance   Float?
+  ltaAllowance         Float?
+  specialAllowance     Float?
+  pfDeduction          Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  salesmanStocks SalesmanStock[]
+  sales          Sale[]
+  stockTransfers StockTransfer[]
+  managedBranch  Branch?         @relation("BranchManager")
+  orders         Order[]
+  expenditures   Expenditure[]
+  attendances    Attendance[]
+}
+
+enum UserRole {
+  stock_manager
+  branch_manager
+  salesman
+}
+
+// Branch model
+model Branch {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  phone     String
+  managerId String?  @unique
+  manager   User?    @relation("BranchManager", fields: [managerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users          User[]
+  branchStocks   BranchStock[]
+  salesmanStocks SalesmanStock[]
+  sales          Sale[]
+  stockTransfers StockTransfer[]
+  orders         Order[]
+}
+
+// Product model
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  sku         String   // HSN Code
+  category    String
+  price       Float
+  mrp         Float?
+  unit        String
+  caseQty     Int
+  gstRate     Float
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  companyStock   CompanyStock?
+  branchStocks   BranchStock[]
+  salesmanStocks SalesmanStock[]
+  saleItems      SaleItem[]
+  stockTransfers StockTransfer[]
+  orderItems     OrderItem[]
+}
+
+// Company Stock (Main warehouse)
+model CompanyStock {
+  id          String   @id @default(cuid())
+  productId   String   @unique
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  lastUpdated DateTime @default(now())
+}
+
+// Branch Stock
+model BranchStock {
+  id          String   @id @default(cuid())
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  lastUpdated DateTime @default(now())
+
+  @@unique([branchId, productId])
+}
+
+// Salesman Stock
+model SalesmanStock {
+  id         String   @id @default(cuid())
+  salesmanId String
+  salesman   User     @relation(fields: [salesmanId], references: [id])
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+  takenDate  DateTime @default(now())
+
+  @@unique([salesmanId, productId])
+}
+
+// Stock Transfer
+model StockTransfer {
+  id            String         @id @default(cuid())
+  productId     String
+  product       Product        @relation(fields: [productId], references: [id])
+  fromBranchId  String?
+  fromBranch    Branch?        @relation(fields: [fromBranchId], references: [id])
+  toBranchId    String?
+  quantity      Int
+  transferredBy String
+  transferredByUser User       @relation(fields: [transferredBy], references: [id])
+  transferDate  DateTime       @default(now())
+  status        TransferStatus @default(pending)
+}
+
+enum TransferStatus {
+  pending
+  completed
+  cancelled
+}
+
+// Customer model for ledger tracking
+model Customer {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String   @unique
+  email         String?
+  address       String?  @db.Text
+  gstin         String?
+  pan           String?
+  // Balance: positive = customer owes us, negative = we owe customer (advance)
+  currentBalance Float   @default(0)
+  totalPurchases Float   @default(0)
+  totalPaid      Float   @default(0)
+  creditLimit    Float?
+  isActive       Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  sales        Sale[]
+  payments     Payment[]
+  transactions CustomerTransaction[]
+}
+
+// Payment model to track individual payments
+model Payment {
+  id            String        @id @default(cuid())
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  saleId        String?
+  sale          Sale?         @relation(fields: [saleId], references: [id])
+  amount        Float
+  paymentMethod PaymentMethod
+  referenceNo   String?
+  notes         String?
+  receivedBy    String
+  paymentDate   DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+
+  // Relations
+  transaction   CustomerTransaction?
+}
+
+// Customer Transaction model for ledger entries
+model CustomerTransaction {
+  id             String          @id @default(cuid())
+  customerId     String
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  saleId         String?
+  sale           Sale?           @relation(fields: [saleId], references: [id])
+  paymentId      String?         @unique
+  payment        Payment?        @relation(fields: [paymentId], references: [id])
+  type           TransactionType
+  amount         Float
+  balanceAfter   Float
+  description    String?
+  transactionDate DateTime      @default(now())
+  createdAt      DateTime       @default(now())
+}
+
+enum TransactionType {
+  sale           // Debit - customer owes us (bill amount)
+  payment        // Credit - customer paid
+  advance        // Credit - advance payment
+  refund         // Credit - we refunded
+  adjustment     // Can be credit or debit
+}
+
+// Sale model
+model Sale {
+  id              String        @id @default(cuid())
+  billNumber      String        @unique
+  salesmanId      String
+  salesman        User          @relation(fields: [salesmanId], references: [id])
+  branchId        String
+  branch          Branch        @relation(fields: [branchId], references: [id])
+  // Customer linking (optional for backward compatibility)
+  customerId      String?
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  customerName    String
+  customerPhone   String?
+  customerEmail   String?
+  customerAddress String?
+  customerGSTIN   String?
+  customerPAN     String?
+  totalAmount     Float
+  discount        Float         @default(0)
+  finalAmount     Float
+  // Payment tracking
+  amountPaid      Float         @default(0)
+  balanceDue      Float         @default(0)
+  paymentStatus   PaymentStatus @default(unpaid)
+  cgstRate        Float         @default(2.5)
+  sgstRate        Float         @default(2.5)
+  paymentMethod   PaymentMethod
+  status          SaleStatus    @default(pending)
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  // Delivery Details
+  deliveryNote      String?
+  modeOfPayment     String?
+  referenceNo       String?
+  otherReferences   String?
+  buyersOrderNo     String?
+  buyersOrderDate   String?
+  dispatchDocNo     String?
+  deliveryNoteDate  String?
+  dispatchedThrough String?
+  destination       String?
+  poNumber          String?
+  vehicleNo         String?
+  billLocation      String?       @db.Text
+  saleDate        DateTime      @default(now())
+  dueDate         DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  items        SaleItem[]
+  payments     Payment[]
+  transactions CustomerTransaction[]
+}
+
+enum PaymentStatus {
+  paid
+  partial
+  unpaid
+}
+
+enum PaymentMethod {
+  cash
+  card
+  upi
+  credit
+}
+
+enum SaleStatus {
+  pending
+  approved
+  rejected
+}
+
+// Sale Item
+model SaleItem {
+  id          String  @id @default(cuid())
+  saleId      String
+  sale        Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  productName String
+  quantity    Int
+  price       Float
+  total       Float
+  hsnCode     String?
+  batchNo     String?
+  expDate     String?
+  mfgDate     String?
+  unit        String?
+}
+
+// Order model (Purchase Invoice - for salesman to order products)
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique
+  salesmanId      String
+  salesman        User          @relation(fields: [salesmanId], references: [id])
+  branchId        String
+  branch          Branch        @relation(fields: [branchId], references: [id])
+  // Customer details
+  customerName    String
+  customerPhone   String?
+  customerEmail   String?
+  customerAddress String?       @db.Text
+  customerGSTIN   String?
+  customerPAN     String?
+  // Amount details
+  totalAmount     Float
+  discount        Float         @default(0)
+  finalAmount     Float
+  // Payment tracking
+  amountPaid      Float         @default(0)
+  balanceDue      Float         @default(0)
+  paymentStatus   PaymentStatus @default(unpaid)
+  cgstRate        Float         @default(2.5)
+  sgstRate        Float         @default(2.5)
+  paymentMethod   PaymentMethod
+  // Order status
+  orderStatus     OrderStatus   @default(pending)
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  convertedSaleId String?       // If approved and converted to sale
+  // Delivery Details
+  deliveryNote      String?
+  modeOfPayment     String?
+  referenceNo       String?
+  otherReferences   String?
+  buyersOrderNo     String?
+  buyersOrderDate   String?
+  dispatchDocNo     String?
+  deliveryNoteDate  String?
+  dispatchedThrough String?
+  destination       String?
+  poNumber          String?
+  vehicleNo         String?
+  orderLocation     String?       @db.Text
+  orderDate       DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  items        OrderItem[]
+}
+
+enum OrderStatus {
+  pending
+  approved
+  rejected
+  converted   // Converted to Tax Invoice/Sale
+}
+
+// Order Item
+model OrderItem {
+  id           String           @id @default(cuid())
+  orderId      String
+  order        Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product          @relation(fields: [productId], references: [id])
+  productName  String
+  quantity     Int
+  price        Float
+  total        Float
+  hsnCode      String?
+  batchNo      String?
+  expDate      String?
+  mfgDate      String?
+  unit         String?
+  availability AvailabilityStatus @default(available)
+}
+
+enum AvailabilityStatus {
+  available
+  not_available
+}
+
+// Expenditure model for salesman expenses
+model Expenditure {
+  id            String            @id @default(cuid())
+  userId        String
+  user          User              @relation(fields: [userId], references: [id])
+  date          DateTime
+  description   String            @db.Text
+  amount        Float
+  evidenceFile  String?           @db.Text  // Base64 or file path
+  evidenceType  String?           // file type: image, pdf, etc.
+  evidenceName  String?           // original file name
+  status        ExpenditureStatus @default(pending)
+  approvedBy    String?
+  approvedAt    DateTime?
+  rejectionReason String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+}
+
+enum ExpenditureStatus {
+  pending
+  approved
+  rejected
+}
+
+// Attendance model
+model Attendance {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  date            DateTime         @db.Date
+  checkInTime     DateTime?
+  checkOutTime    DateTime?
+  checkInIp       String?
+  checkOutIp      String?
+  checkInDevice   String?
+  checkOutDevice  String?
+  checkInLocation String?
+  checkOutLocation String?
+  checkInPhoto    String?          @db.LongText
+  checkOutPhoto   String?          @db.LongText
+  totalHours      Float?
+  status          AttendanceStatus @default(present)
+  approvalStatus  ApprovalStatus   @default(pending)
+  approvedBy      String?
+  approvedAt      DateTime?
+  notes           String?          @db.Text
+  lateReason      String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([userId, date])
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  half_day
+  late
+  on_leave
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}

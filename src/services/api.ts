@@ -1,0 +1,518 @@
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
+// Get token from localStorage
+const getToken = () => localStorage.getItem('token');
+
+// API request helper
+async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = getToken();
+
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
+    },
+  };
+
+  const response = await fetch(`${API_URL}${endpoint}`, config);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || 'Request failed');
+  }
+
+  return response.json();
+}
+
+// ==================== AUTH API ====================
+
+export const authApi = {
+  login: (email: string, password: string) =>
+    apiRequest<{ user: any; token: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  getCurrentUser: () => apiRequest<any>('/auth/me'),
+};
+
+// ==================== USERS API ====================
+
+export const usersApi = {
+  getAll: () => apiRequest<any[]>('/users'),
+
+  create: (userData: any) =>
+    apiRequest<any>('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    }),
+
+  update: (id: string, userData: any) =>
+    apiRequest<any>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/users/${id}`, { method: 'DELETE' }),
+};
+
+// ==================== BRANCHES API ====================
+
+export const branchesApi = {
+  getAll: () => apiRequest<any[]>('/branches'),
+
+  create: (branchData: any) =>
+    apiRequest<any>('/branches', {
+      method: 'POST',
+      body: JSON.stringify(branchData),
+    }),
+
+  update: (id: string, branchData: any) =>
+    apiRequest<any>(`/branches/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(branchData),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/branches/${id}`, { method: 'DELETE' }),
+};
+
+// ==================== PRODUCTS API ====================
+
+export const productsApi = {
+  getAll: () => apiRequest<any[]>('/products'),
+
+  create: (productData: any) =>
+    apiRequest<any>('/products', {
+      method: 'POST',
+      body: JSON.stringify(productData),
+    }),
+
+  update: (id: string, productData: any) =>
+    apiRequest<any>(`/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(productData),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/products/${id}`, { method: 'DELETE' }),
+};
+
+// ==================== COMPANY STOCK API ====================
+
+export const companyStockApi = {
+  getAll: () => apiRequest<any[]>('/company-stock'),
+
+  update: (productId: string, quantity: number) =>
+    apiRequest<any>(`/company-stock/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ quantity }),
+    }),
+};
+
+// ==================== BRANCH STOCK API ====================
+
+export const branchStockApi = {
+  getAll: (branchId?: string) =>
+    apiRequest<any[]>(`/branch-stock${branchId ? `?branchId=${branchId}` : ''}`),
+
+  update: (branchId: string, productId: string, quantity: number) =>
+    apiRequest<any>('/branch-stock', {
+      method: 'PUT',
+      body: JSON.stringify({ branchId, productId, quantity }),
+    }),
+};
+
+// ==================== SALESMAN STOCK API ====================
+
+export const salesmanStockApi = {
+  getAll: (salesmanId?: string) =>
+    apiRequest<any[]>(`/salesman-stock${salesmanId ? `?salesmanId=${salesmanId}` : ''}`),
+
+  takeStock: (data: {
+    salesmanId: string;
+    branchId: string;
+    productId: string;
+    quantity: number;
+  }) =>
+    apiRequest<any>('/salesman-stock/take', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  returnStock: (data: {
+    salesmanId: string;
+    branchId: string;
+    productId: string;
+    quantity: number;
+  }) =>
+    apiRequest<any>('/salesman-stock/return', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+// ==================== STOCK TRANSFER API ====================
+
+export const stockTransferApi = {
+  transferToBranch: (data: {
+    productId: string;
+    toBranchId: string;
+    quantity: number;
+    transferredBy: string;
+  }) =>
+    apiRequest<any>('/stock-transfer/to-branch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  transferBranchToBranch: (data: {
+    productId: string;
+    fromBranchId: string;
+    toBranchId: string;
+    quantity: number;
+    transferredBy: string;
+  }) =>
+    apiRequest<any>('/stock-transfer/branch-to-branch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getTransferHistory: (branchId?: string, productId?: string) => {
+    const params = new URLSearchParams();
+    if (branchId) params.append('branchId', branchId);
+    if (productId) params.append('productId', productId);
+    const query = params.toString();
+    return apiRequest<any[]>(`/stock-transfers${query ? `?${query}` : ''}`);
+  },
+};
+
+// ==================== SALES API ====================
+
+export const salesApi = {
+  getAll: (filters?: { salesmanId?: string; branchId?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.salesmanId) params.append('salesmanId', filters.salesmanId);
+    if (filters?.branchId) params.append('branchId', filters.branchId);
+    if (filters?.status) params.append('status', filters.status);
+    const query = params.toString();
+    return apiRequest<any[]>(`/sales${query ? `?${query}` : ''}`);
+  },
+
+  getById: (id: string) => apiRequest<any>(`/sales/${id}`),
+
+  create: (saleData: any) =>
+    apiRequest<any>('/sales', {
+      method: 'POST',
+      body: JSON.stringify(saleData),
+    }),
+
+  update: (id: string, saleData: any) =>
+    apiRequest<any>(`/sales/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(saleData),
+    }),
+
+  getPendingSales: () => apiRequest<any[]>('/sales/pending/all'),
+
+  approveSale: (id: string) =>
+    apiRequest<any>(`/sales/${id}/approve`, {
+      method: 'PUT',
+    }),
+
+  rejectSale: (id: string, rejectionReason: string) =>
+    apiRequest<any>(`/sales/${id}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ rejectionReason }),
+    }),
+};
+
+// ==================== CUSTOMERS API ====================
+
+export const customersApi = {
+  getAll: () => apiRequest<any[]>('/customers'),
+
+  getById: (id: string) => apiRequest<any>(`/customers/${id}`),
+
+  getByPhone: (phone: string) => apiRequest<any>(`/customers/phone/${phone}`),
+
+  create: (customerData: any) =>
+    apiRequest<any>('/customers', {
+      method: 'POST',
+      body: JSON.stringify(customerData),
+    }),
+
+  update: (id: string, customerData: any) =>
+    apiRequest<any>(`/customers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(customerData),
+    }),
+
+  getLedger: (id: string, filters?: { startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    const query = params.toString();
+    return apiRequest<any[]>(`/customers/${id}/ledger${query ? `?${query}` : ''}`);
+  },
+
+  getOutstanding: () => apiRequest<any[]>('/customers/outstanding/all'),
+
+  getWithAdvance: () => apiRequest<any[]>('/customers/advance/all'),
+};
+
+// ==================== PAYMENTS API ====================
+
+export const paymentsApi = {
+  getAll: (filters?: { customerId?: string; startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.customerId) params.append('customerId', filters.customerId);
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    const query = params.toString();
+    return apiRequest<any[]>(`/payments${query ? `?${query}` : ''}`);
+  },
+
+  create: (paymentData: {
+    customerId: string;
+    saleId?: string;
+    amount: number;
+    paymentMethod: string;
+    referenceNo?: string;
+    notes?: string;
+    isAdvance?: boolean;
+  }) =>
+    apiRequest<any>('/payments', {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    }),
+
+  getSummary: () => apiRequest<{
+    totalOutstanding: number;
+    totalAdvance: number;
+    customersWithOutstanding: number;
+    customersWithAdvance: number;
+    todayCollections: number;
+  }>('/payments/summary'),
+};
+
+// ==================== ORDERS API (Purchase Invoice) ====================
+
+export const ordersApi = {
+  getAll: (filters?: { salesmanId?: string; branchId?: string; orderStatus?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.salesmanId) params.append('salesmanId', filters.salesmanId);
+    if (filters?.branchId) params.append('branchId', filters.branchId);
+    if (filters?.orderStatus) params.append('orderStatus', filters.orderStatus);
+    const query = params.toString();
+    return apiRequest<any[]>(`/orders${query ? `?${query}` : ''}`);
+  },
+
+  getById: (id: string) => apiRequest<any>(`/orders/${id}`),
+
+  create: (orderData: any) =>
+    apiRequest<any>('/orders', {
+      method: 'POST',
+      body: JSON.stringify(orderData),
+    }),
+
+  update: (id: string, orderData: any) =>
+    apiRequest<any>(`/orders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(orderData),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/orders/${id}`, { method: 'DELETE' }),
+
+  getPendingOrders: () => apiRequest<any[]>('/orders/pending/all'),
+
+  approveOrder: (id: string) =>
+    apiRequest<any>(`/orders/${id}/approve`, {
+      method: 'PUT',
+    }),
+
+  rejectOrder: (id: string, rejectionReason: string) =>
+    apiRequest<any>(`/orders/${id}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ rejectionReason }),
+    }),
+};
+
+// ==================== EXPENDITURES API ====================
+
+export const expendituresApi = {
+  getAll: (filters?: { userId?: string; status?: string; month?: number; year?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.userId) params.append('userId', filters.userId);
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.month) params.append('month', filters.month.toString());
+    if (filters?.year) params.append('year', filters.year.toString());
+    const query = params.toString();
+    return apiRequest<any[]>(`/expenditures${query ? `?${query}` : ''}`);
+  },
+
+  getById: (id: string) => apiRequest<any>(`/expenditures/${id}`),
+
+  create: (data: {
+    date: string;
+    description: string;
+    amount: number;
+    evidenceFile?: string;
+    evidenceType?: string;
+    evidenceName?: string;
+  }) =>
+    apiRequest<any>('/expenditures', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: {
+    date?: string;
+    description?: string;
+    amount?: number;
+    evidenceFile?: string;
+    evidenceType?: string;
+    evidenceName?: string;
+  }) =>
+    apiRequest<any>(`/expenditures/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/expenditures/${id}`, { method: 'DELETE' }),
+
+  getPending: () => apiRequest<any[]>('/expenditures/pending/all'),
+
+  approve: (id: string) =>
+    apiRequest<any>(`/expenditures/${id}/approve`, {
+      method: 'PUT',
+    }),
+
+  reject: (id: string, rejectionReason: string) =>
+    apiRequest<any>(`/expenditures/${id}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ rejectionReason }),
+    }),
+
+  getSummary: (filters?: { userId?: string; month?: number; year?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.userId) params.append('userId', filters.userId);
+    if (filters?.month) params.append('month', filters.month.toString());
+    if (filters?.year) params.append('year', filters.year.toString());
+    const query = params.toString();
+    return apiRequest<{
+      pending: { count: number; amount: number };
+      approved: { count: number; amount: number };
+      rejected: { count: number; amount: number };
+      total: { count: number; amount: number };
+    }>(`/expenditures/summary${query ? `?${query}` : ''}`);
+  },
+};
+
+// ==================== REPORTS API ====================
+
+export const reportsApi = {
+  getSalesReport: (filters?: {
+    startDate?: string;
+    endDate?: string;
+    branchId?: string;
+    salesmanId?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.branchId) params.append('branchId', filters.branchId);
+    if (filters?.salesmanId) params.append('salesmanId', filters.salesmanId);
+    const query = params.toString();
+    return apiRequest<any>(`/reports/sales${query ? `?${query}` : ''}`);
+  },
+};
+
+// ==================== ORGANIZATION API ====================
+
+export const organizationApi = {
+  get: () => apiRequest<any>('/organization'),
+
+  save: (data: any) =>
+    apiRequest<any>('/organization', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  uploadDocument: (orgId: string, data: {
+    documentName: string;
+    documentType: string;
+    fileData: string;
+    fileName: string;
+    fileType: string;
+  }) =>
+    apiRequest<any>(`/organization/${orgId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteDocument: (docId: string) =>
+    apiRequest<void>(`/organization/documents/${docId}`, { method: 'DELETE' }),
+};
+
+// ==================== ATTENDANCE API ====================
+
+export const attendanceApi = {
+  checkIn: (data: { photo?: string; location?: string; device?: string }) =>
+    apiRequest<any>('/attendance/check-in', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  checkOut: (data: { photo?: string; location?: string; device?: string }) =>
+    apiRequest<any>('/attendance/check-out', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getToday: () => apiRequest<any>('/attendance/today'),
+
+  getMyHistory: (month?: number, year?: number) => {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month.toString());
+    if (year) params.append('year', year.toString());
+    const query = params.toString();
+    return apiRequest<any[]>(`/attendance/my-history${query ? `?${query}` : ''}`);
+  },
+
+  getAll: (filters?: { userId?: string; date?: string; month?: number; year?: number; approvalStatus?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.userId) params.append('userId', filters.userId);
+    if (filters?.date) params.append('date', filters.date);
+    if (filters?.month) params.append('month', filters.month.toString());
+    if (filters?.year) params.append('year', filters.year.toString());
+    if (filters?.approvalStatus) params.append('approvalStatus', filters.approvalStatus);
+    const query = params.toString();
+    return apiRequest<any[]>(`/attendance/all${query ? `?${query}` : ''}`);
+  },
+
+  getPending: () => apiRequest<any[]>('/attendance/pending'),
+
+  approve: (id: string) =>
+    apiRequest<any>(`/attendance/${id}/approve`, { method: 'PUT' }),
+
+  reject: (id: string, notes?: string) =>
+    apiRequest<any>(`/attendance/${id}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ notes }),
+    }),
+
+  getSummary: (month?: number, year?: number) => {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month.toString());
+    if (year) params.append('year', year.toString());
+    const query = params.toString();
+    return apiRequest<any>(`/attendance/summary${query ? `?${query}` : ''}`);
+  },
+};
