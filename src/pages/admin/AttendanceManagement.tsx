@@ -7,7 +7,12 @@ import '../stock/Stock.css';
 type CardFilter = 'all' | 'today_present' | 'month_present' | 'half_day' | 'absent_late' | 'pending';
 
 export function AttendanceManagement() {
-  const { users, fetchUsers } = useStore();
+  const { users, fetchUsers, currentUser } = useStore();
+  const isBranchManager = currentUser?.role === 'branch_manager';
+  // For branch_manager, only show their branch employees in filters
+  const filteredUsers = isBranchManager && currentUser?.branchId
+    ? users.filter(u => u.branchId === currentUser.branchId)
+    : users;
   const [attendance, setAttendance] = useState<any[]>([]);
   const [allMonthData, setAllMonthData] = useState<any[]>([]);
   const [pendingList, setPendingList] = useState<any[]>([]);
@@ -564,7 +569,7 @@ export function AttendanceManagement() {
                   <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px', display: 'block' }}>Employee</label>
                   <select className="form-select" value={dlEmployee} onChange={e => setDlEmployee(e.target.value)}>
                     <option value="">All Employees</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name} {u.employeeCode ? `(${u.employeeCode})` : ''}</option>)}
+                    {filteredUsers.map(u => <option key={u.id} value={u.id}>{u.name} {u.employeeCode ? `(${u.employeeCode})` : ''}</option>)}
                   </select>
                 </div>
                 <button className="btn btn-primary" onClick={handleFilteredDownload} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
@@ -923,7 +928,7 @@ export function AttendanceManagement() {
           <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
             <select className="form-select" style={{ maxWidth: '200px' }} value={filterUser} onChange={(e) => setFilterUser(e.target.value)}>
               <option value="">All Employees</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              {filteredUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
             <select className="form-select" style={{ maxWidth: '160px' }} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
               <option value="">All Status</option>
@@ -1169,7 +1174,7 @@ export function AttendanceManagement() {
                   <label style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px', display: 'block' }}>Select Employee</label>
                   <select className="form-select" value={slipEmployee} onChange={e => { setSlipEmployee(e.target.value); setSlipCustomName(''); setSlipCustomDesignation(''); setSlipData(null); }}>
                     <option value="">-- Select Employee or Enter Custom --</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name} {u.employeeCode ? `(${u.employeeCode})` : ''}</option>)}
+                    {filteredUsers.map(u => <option key={u.id} value={u.id}>{u.name} {u.employeeCode ? `(${u.employeeCode})` : ''}</option>)}
                   </select>
                 </div>
                 {!slipEmployee && (

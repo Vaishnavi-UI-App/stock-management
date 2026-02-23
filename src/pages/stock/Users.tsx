@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Plus, Edit2, Trash2, X, Building2, User, Camera, Upload, Eye, FileText, Building, Briefcase, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Building2, User, Camera, Upload, Eye, FileText, Building, Briefcase, ChevronDown, ChevronUp, MessageCircle, Send } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import type { UserRole } from '../../types';
 import './Stock.css';
@@ -13,6 +13,7 @@ export function Users() {
   const [filterRole, setFilterRole] = useState<string>('');
   const [previewDoc, setPreviewDoc] = useState<{ type: string; data: string } | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [credentialsInfo, setCredentialsInfo] = useState<{ name: string; email: string; password: string; phone: string } | null>(null);
 
   const profilePhotoRef = useRef<HTMLInputElement>(null);
   const aadharDocRef = useRef<HTMLInputElement>(null);
@@ -175,13 +176,14 @@ export function Users() {
     setEditingUser(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const plainPassword = formData.password || 'password123';
     const userData = {
       name: formData.name,
       email: formData.email,
-      password: formData.password || 'password123',
+      password: plainPassword,
       phone: formData.phone,
       role: formData.role,
       branchId: formData.role !== 'stock_manager' ? formData.branchId : undefined,
@@ -224,12 +226,23 @@ export function Users() {
       if (!formData.password) {
         delete updateData.password;
       }
-      updateUser(editingUser, updateData);
+      await updateUser(editingUser, updateData);
+      handleCloseModal();
     } else {
-      addUser(userData);
+      try {
+        await addUser(userData);
+        // Show WhatsApp credentials dialog after successful creation
+        setCredentialsInfo({
+          name: formData.name,
+          email: formData.email,
+          password: plainPassword,
+          phone: formData.phone
+        });
+        handleCloseModal();
+      } catch {
+        // Error is handled by the store
+      }
     }
-
-    handleCloseModal();
   };
 
   const handleDelete = (id: string) => {
@@ -258,6 +271,17 @@ export function Users() {
       case 'salesman': return 'Salesman';
       default: return role;
     }
+  };
+
+  const sendViaWhatsApp = (phone: string, name: string, email: string, password: string) => {
+    // Remove non-digit characters and add 91 country code if not present
+    let cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length === 10) {
+      cleanPhone = '91' + cleanPhone;
+    }
+    const message = `Hello ${name},\n\nYour DynamicInventory ERP login credentials:\n\nEmail: ${email}\nPassword: ${password}\n\nPlease login and change your password after first login.\n\nThank you!`;
+    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   const filteredUsers = users.filter(user => {
@@ -330,6 +354,20 @@ export function Users() {
                   {user.bloodGroup && <span className="badge badge-danger">{user.bloodGroup}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    className="btn btn-sm"
+                    title="Send credentials via WhatsApp"
+                    style={{ background: '#25D366', color: 'white', border: 'none' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const password = prompt('Enter password to send to ' + user.name + ':');
+                      if (password) {
+                        sendViaWhatsApp(user.phone, user.name, user.email, password);
+                      }
+                    }}
+                  >
+                    <MessageCircle size={14} />
+                  </button>
                   <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); handleOpenModal(user.id); }}>
                     <Edit2 size={14} />
                   </button>
@@ -991,6 +1029,54 @@ export function Users() {
               ) : (
                 <p>Unable to preview this file type</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* WhatsApp Credentials Modal */}
+      {credentialsInfo && (
+        <div className="modal-overlay" onClick={() => setCredentialsInfo(null)} style={{ zIndex: 1002 }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+            <div className="modal-header" style={{ background: '#25D366', color: 'white' }}>
+              <h3 className="modal-title" style={{ color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MessageCircle size={20} />
+                Employee Created Successfully!
+              </h3>
+              <button className="modal-close" onClick={() => setCredentialsInfo(null)} style={{ color: 'white' }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ textAlign: 'center', padding: '24px' }}>
+              <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '20px', marginBottom: '20px', textAlign: 'left' }}>
+                <p style={{ margin: '0 0 12px', fontWeight: 600, color: '#166534' }}>Login Credentials:</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px' }}>
+                  <div><span style={{ color: '#64748b' }}>Name:</span> <strong>{credentialsInfo.name}</strong></div>
+                  <div><span style={{ color: '#64748b' }}>Email:</span> <strong>{credentialsInfo.email}</strong></div>
+                  <div><span style={{ color: '#64748b' }}>Password:</span> <strong>{credentialsInfo.password}</strong></div>
+                  <div><span style={{ color: '#64748b' }}>Phone:</span> <strong>{credentialsInfo.phone}</strong></div>
+                </div>
+              </div>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
+                Send these credentials to the employee via WhatsApp
+              </p>
+              <button
+                className="btn btn-primary"
+                style={{ background: '#25D366', border: 'none', width: '100%', padding: '12px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                onClick={() => {
+                  sendViaWhatsApp(credentialsInfo.phone, credentialsInfo.name, credentialsInfo.email, credentialsInfo.password);
+                  setCredentialsInfo(null);
+                }}
+              >
+                <Send size={18} />
+                Send via WhatsApp
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ width: '100%', marginTop: '8px' }}
+                onClick={() => setCredentialsInfo(null)}
+              >
+                Skip
+              </button>
             </div>
           </div>
         </div>

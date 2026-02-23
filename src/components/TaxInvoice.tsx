@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Sale } from '../types';
 import { useStore } from '../store/useStore';
+import logoImg from '/logo.png';
 import './TaxInvoice.css';
 
 interface TaxInvoiceProps {
@@ -27,19 +28,8 @@ interface TaxInvoiceProps {
     upiId: string;
   };
   deliveryDetails?: {
-    deliveryNote?: string;
-    referenceNo?: string;
-    referenceDate?: string;
-    buyersOrderNo?: string;
-    buyersOrderDate?: string;
-    dispatchDocNo?: string;
-    dispatchedThrough?: string;
-    billOfLadingNo?: string;
     paymentTerms?: string;
-    otherReferences?: string;
-    deliveryNoteDate?: string;
     destination?: string;
-    poNumber?: string;
     vehicleNo?: string;
   };
 }
@@ -100,18 +90,8 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
     upiId: '7276291431@kotak'
   },
   deliveryDetails = {
-    deliveryNote: '',
-    referenceNo: '',
-    referenceDate: '',
-    buyersOrderNo: '',
-    buyersOrderDate: '',
-    dispatchDocNo: '',
-    dispatchedThrough: '',
     paymentTerms: '',
-    otherReferences: '',
-    deliveryNoteDate: '',
     destination: '',
-    poNumber: '',
     vehicleNo: ''
   }
 }, ref) => {
@@ -125,18 +105,8 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
 
   // Merge delivery details from sale with defaults
   const mergedDeliveryDetails = {
-    deliveryNote: sale.deliveryNote || deliveryDetails.deliveryNote || '',
-    referenceNo: sale.referenceNo || deliveryDetails.referenceNo || '',
-    referenceDate: deliveryDetails.referenceDate || '',
-    buyersOrderNo: sale.buyersOrderNo || deliveryDetails.buyersOrderNo || '',
-    buyersOrderDate: sale.buyersOrderDate || deliveryDetails.buyersOrderDate || '',
-    dispatchDocNo: sale.dispatchDocNo || deliveryDetails.dispatchDocNo || '',
-    dispatchedThrough: sale.dispatchedThrough || deliveryDetails.dispatchedThrough || '',
     paymentTerms: sale.modeOfPayment || deliveryDetails.paymentTerms || '',
-    otherReferences: sale.otherReferences || deliveryDetails.otherReferences || '',
-    deliveryNoteDate: sale.deliveryNoteDate || deliveryDetails.deliveryNoteDate || '',
     destination: sale.destination || deliveryDetails.destination || '',
-    poNumber: sale.poNumber || deliveryDetails.poNumber || '',
     vehicleNo: sale.vehicleNo || deliveryDetails.vehicleNo || ''
   };
 
@@ -176,7 +146,10 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
     <div className="tax-invoice" ref={ref}>
       {/* Header */}
       <div className="invoice-header-title">
-        <h2>Tax Invoice</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <img src={logoImg} alt="Dynamic Crop Science" crossOrigin="anonymous" style={{ height: 32, objectFit: 'contain' }} />
+          <h2 style={{ margin: 0 }}>Tax Invoice</h2>
+        </div>
       </div>
 
       {/* Main Header Section */}
@@ -218,45 +191,20 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
               <tr>
                 <td className="detail-label">Invoice No.</td>
                 <td className="detail-value">{sale.billNumber}</td>
+              </tr>
+              <tr>
                 <td className="detail-label">Dated</td>
                 <td className="detail-value">{invoiceDate}</td>
               </tr>
               <tr>
-                <td className="detail-label">Delivery Note</td>
-                <td className="detail-value">{mergedDeliveryDetails.deliveryNote}</td>
                 <td className="detail-label">Mode/Terms of Payment</td>
                 <td className="detail-value">{mergedDeliveryDetails.paymentTerms}</td>
               </tr>
               <tr>
-                <td className="detail-label">Reference No. & Date.</td>
-                <td className="detail-value">
-                  {mergedDeliveryDetails.referenceNo}
-                  {mergedDeliveryDetails.referenceDate && ` dt. ${mergedDeliveryDetails.referenceDate}`}
-                </td>
-                <td className="detail-label">Other References</td>
-                <td className="detail-value">{mergedDeliveryDetails.otherReferences}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Buyer's Order No.</td>
-                <td className="detail-value">{mergedDeliveryDetails.buyersOrderNo}</td>
-                <td className="detail-label">Dated</td>
-                <td className="detail-value">{mergedDeliveryDetails.buyersOrderDate}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Dispatch Doc No.</td>
-                <td className="detail-value">{mergedDeliveryDetails.dispatchDocNo}</td>
-                <td className="detail-label">Delivery Note Date</td>
-                <td className="detail-value">{mergedDeliveryDetails.deliveryNoteDate}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Dispatched through</td>
-                <td className="detail-value">{mergedDeliveryDetails.dispatchedThrough}</td>
                 <td className="detail-label">Destination</td>
                 <td className="detail-value">{mergedDeliveryDetails.destination}</td>
               </tr>
               <tr>
-                <td className="detail-label">PO Number</td>
-                <td className="detail-value">{mergedDeliveryDetails.poNumber}</td>
                 <td className="detail-label">Vehicle No.</td>
                 <td className="detail-value">{mergedDeliveryDetails.vehicleNo}</td>
               </tr>
@@ -293,25 +241,11 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
                   <td className="col-exp">{item.expDate || '-'}</td>
                   <td className="col-mfg">{item.mfgDate || '-'}</td>
                   <td className="col-qty">{item.quantity}</td>
-                  <td className="col-rate">{item.price}</td>
-                  <td className="col-amount">{item.total.toLocaleString()}</td>
+                  <td className="col-rate">₹{Number(item.price).toLocaleString()}</td>
+                  <td className="col-amount">₹{item.total.toLocaleString()}</td>
                 </tr>
               );
             })}
-            {/* Empty rows to maintain format */}
-            {Array.from({ length: Math.max(0, 5 - sale.items.length) }).map((_, i) => (
-              <tr key={`empty-${i}`} className="empty-row">
-                <td className="col-sno">&nbsp;</td>
-                <td className="col-item"></td>
-                <td className="col-hsn"></td>
-                <td className="col-batch"></td>
-                <td className="col-exp"></td>
-                <td className="col-mfg"></td>
-                <td className="col-qty"></td>
-                <td className="col-rate"></td>
-                <td className="col-amount"></td>
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>
@@ -321,50 +255,41 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
         <div className="gst-rows">
           <div className="gst-row">
             <span className="gst-label">CGST @{cgstRate}%</span>
-            <span className="gst-dash">-</span>
-            <span className="gst-dash">-</span>
             <span className="gst-value">₹ {totalCGST.toFixed(2)}</span>
           </div>
           <div className="gst-row">
             <span className="gst-label">SGST @{sgstRate}%</span>
-            <span className="gst-dash">-</span>
-            <span className="gst-dash">-</span>
             <span className="gst-value">₹ {totalSGST.toFixed(2)}</span>
           </div>
           <div className="gst-row total-row">
             <span className="gst-label"><strong>TOTAL</strong></span>
-            <span></span>
-            <span className="total-qty"><strong>{sale.items.reduce((sum, item) => sum + item.quantity, 0)}</strong></span>
+            <span className="total-qty"><strong>{sale.items.reduce((sum, item) => sum + item.quantity, 0)} Qty</strong></span>
             <span className="gst-value total-amount"><strong>₹ {sale.finalAmount.toLocaleString()}</strong></span>
           </div>
-          <div className="gst-row" style={{ borderTop: '1px dashed #cbd5e0' }}>
-            <span className="gst-label" style={{ color: '#22863a' }}>Amount Paid</span>
-            <span></span>
-            <span></span>
-            <span className="gst-value" style={{ color: '#22863a', fontWeight: 600 }}>₹ {(sale.amountPaid || 0).toLocaleString()}</span>
+          <div className="gst-row">
+            <span className="gst-label" style={{ fontStyle: 'normal', fontWeight: 600 }}>Amount Paid</span>
+            <span className="gst-value" style={{ fontWeight: 600 }}>₹ {(sale.amountPaid || 0).toLocaleString()}</span>
           </div>
           <div className="gst-row">
-            <span className="gst-label" style={{ color: (sale.balanceDue || 0) > 0 ? '#c62828' : '#22863a', fontWeight: 600 }}>
-              {(sale.balanceDue || 0) > 0 ? 'Balance Due' : 'Fully Paid'}
+            <span className="gst-label" style={{ fontStyle: 'normal', fontWeight: 700, color: (sale.balanceDue || 0) > 0 ? '#c62828' : '#1b5e20' }}>
+              {(sale.balanceDue || 0) > 0 ? 'BALANCE DUE' : 'FULLY PAID'}
             </span>
-            <span></span>
-            <span></span>
-            <span className="gst-value" style={{ color: (sale.balanceDue || 0) > 0 ? '#c62828' : '#22863a', fontWeight: 700, fontSize: '14px' }}>
+            <span className="gst-value" style={{ fontWeight: 700, fontSize: '12px', color: (sale.balanceDue || 0) > 0 ? '#c62828' : '#1b5e20' }}>
               ₹ {(sale.balanceDue || 0).toLocaleString()}
             </span>
           </div>
         </div>
         {/* Salesman Info & Location */}
-        <div style={{ marginTop: '8px', padding: '8px 12px', background: '#f0f4f8', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-          <span style={{ fontSize: '12px', color: '#4a5568' }}>Bill Created By: <strong style={{ color: '#2d3748' }}>{salesman?.name || 'N/A'}</strong></span>
+        <div style={{ padding: '5px 12px', borderTop: '1px solid #000', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px', fontSize: '9px' }}>
+          <span>Bill Created By: <strong>{salesman?.name || 'N/A'}</strong></span>
           {sale.billLocation && (
             <a
               href={sale.billLocation.includes('google.com/maps') ? sale.billLocation : `https://www.google.com/maps/search/${encodeURIComponent(sale.billLocation)}`}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ fontSize: '11px', color: '#1565c0', textDecoration: 'underline', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ fontSize: '8px', color: '#1565c0', textDecoration: 'underline', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
-              📍 {sale.billLocation}
+              Location: {sale.billLocation}
             </a>
           )}
         </div>

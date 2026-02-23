@@ -1,9 +1,11 @@
 import { ShoppingBag } from 'lucide-react';
 import { useStore } from '../../store/useStore';
+import { useLanguage } from '../../i18n/useLanguage';
 import './Sales.css';
 
 export function MyStock() {
   const { currentUser, salesmanStock, getProductById } = useStore();
+  const { t } = useLanguage();
 
   const mySalesmanStock = salesmanStock.filter(ss => ss.salesmanId === currentUser?.id);
 
@@ -18,8 +20,8 @@ export function MyStock() {
     <div className="sales-page">
       <div className="page-header">
         <div>
-          <h1>My Stock</h1>
-          <p>Products currently with you</p>
+          <h1>{t.myStock}</h1>
+          <p>{t.productsCurrentlyWithYou}</p>
         </div>
       </div>
 
@@ -27,15 +29,15 @@ export function MyStock() {
       <div className="sales-stats">
         <div className="sales-stat">
           <div className="sales-stat-value">{mySalesmanStock.length}</div>
-          <div className="sales-stat-label">Product Types</div>
+          <div className="sales-stat-label">{t.productTypes}</div>
         </div>
         <div className="sales-stat">
           <div className="sales-stat-value">{totalItems}</div>
-          <div className="sales-stat-label">Total Items</div>
+          <div className="sales-stat-label">{t.totalItems}</div>
         </div>
         <div className="sales-stat">
           <div className="sales-stat-value">₹{totalValue.toLocaleString()}</div>
-          <div className="sales-stat-label">Total Value</div>
+          <div className="sales-stat-label">{t.totalValue}</div>
         </div>
       </div>
 
@@ -67,7 +69,7 @@ export function MyStock() {
                   <div style={{ textAlign: 'right' }}>
                     <div className="stock-card-price">₹{product.price}</div>
                     <div style={{ fontSize: '12px', color: 'var(--gray-500)' }}>
-                      Value: ₹{value.toLocaleString()}
+                      {t.value}: ₹{value.toLocaleString()}
                     </div>
                   </div>
                 </div>
@@ -79,9 +81,9 @@ export function MyStock() {
         <div className="card">
           <div className="empty-state">
             <ShoppingBag size={64} className="empty-state-icon" />
-            <h3 className="empty-state-title">No Products with You</h3>
+            <h3 className="empty-state-title">{t.noProductsWithYou}</h3>
             <p className="empty-state-text">
-              Go to "Take Product" to collect products from branch stock
+              {t.goToTakeProduct}
             </p>
           </div>
         </div>

@@ -16,6 +16,33 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+async function generateNextDocNumber(tx, modelName, fieldName, prefix) {
+  // Get the latest record to find the highest serial number
+  const rows = await tx[modelName].findMany({
+    select: { [fieldName]: true },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  });
+
+  let maxSerial = 0;
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+
+  for (const row of rows) {
+    const val = row[fieldName];
+    if (!val || typeof val !== 'string') continue;
+    const match = val.match(pattern);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxSerial) maxSerial = num;
+    }
+  }
+
+  const nextSerial = maxSerial + 1;
+  // Pad to at least 4 digits: INV-0001, PO-0001, etc.
+  const padded = String(nextSerial).padStart(4, '0');
+  return `${prefix}-${padded}`;
+}
+
 // Auth Middleware
 const authMiddleware = async (req, res, next) => {
   try {
@@ -59,6 +86,9 @@ app.post('/api/auth/login', async (req, res) => {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    // Audit log for login
+    createAuditLog(user.id, 'LOGIN', 'User', user.id, null, { email: user.email }, req.ip);
+
     res.json({ user: userWithoutPassword, token });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -97,6 +127,10 @@ app.post('/api/users', authMiddleware, async (req, res) => {
       include: { branch: true }
     });
     const { password: _, ...userWithoutPassword } = user;
+
+    // Audit log
+    createAuditLog(req.user.id, 'CREATE', 'User', user.id, null, { name: user.name, email: user.email, role: user.role }, req.ip);
+
     res.status(201).json(userWithoutPassword);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -120,6 +154,10 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
       include: { branch: true }
     });
     const { password: _, ...userWithoutPassword } = user;
+
+    // Audit log
+    createAuditLog(req.user.id, 'UPDATE', 'User', id, null, { name: user.name, role: user.role }, req.ip);
+
     res.json(userWithoutPassword);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -131,6 +169,10 @@ app.delete('/api/users/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.user.delete({ where: { id } });
+
+    // Audit log
+    createAuditLog(req.user.id, 'DELETE', 'User', id, null, null, req.ip);
+
     res.json({ message: 'User deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -159,6 +201,9 @@ app.post('/api/branches', authMiddleware, async (req, res) => {
       data: req.body,
       include: { manager: { select: { id: true, name: true, email: true } } }
     });
+
+    createAuditLog(req.user.id, 'CREATE', 'Branch', branch.id, null, { name: branch.name }, req.ip);
+
     res.status(201).json(branch);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -174,6 +219,9 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
       data: req.body,
       include: { manager: { select: { id: true, name: true, email: true } } }
     });
+
+    createAuditLog(req.user.id, 'UPDATE', 'Branch', id, null, { name: branch.name }, req.ip);
+
     res.json(branch);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -185,6 +233,9 @@ app.delete('/api/branches/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.branch.delete({ where: { id } });
+
+    createAuditLog(req.user.id, 'DELETE', 'Branch', id, null, null, req.ip);
+
     res.json({ message: 'Branch deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -197,9 +248,19 @@ app.delete('/api/branches/:id', authMiddleware, async (req, res) => {
 app.get('/api/products', authMiddleware, async (req, res) => {
   try {
     const products = await prisma.product.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: { batches: true }
     });
-    res.json(products);
+    // Flatten first batch info onto product for frontend compatibility
+    const result = products.map(p => {
+      const batch = p.batches && p.batches.length > 0 ? p.batches[0] : null;
+      return {
+        ...p,
+        batchNo: batch ? batch.batchNo : null,
+        mfgDate: batch ? batch.mfgDate : null
+      };
+    });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -208,8 +269,39 @@ app.get('/api/products', authMiddleware, async (req, res) => {
 // Create product
 app.post('/api/products', authMiddleware, async (req, res) => {
   try {
-    const product = await prisma.product.create({ data: req.body });
-    res.status(201).json(product);
+    const { name, sku, category, price, mrp, unit, caseQty, gstRate, description, expDate, reorderPoint, batchNo, mfgDate } = req.body;
+    const productData = { name, sku, category, price, unit, caseQty: caseQty || 1, gstRate: gstRate || 5 };
+    if (mrp !== undefined && mrp !== null) productData.mrp = mrp;
+    if (description) productData.description = description;
+    if (expDate) productData.expDate = new Date(expDate);
+    if (reorderPoint !== undefined) productData.reorderPoint = reorderPoint;
+
+    const product = await prisma.product.create({ data: productData });
+
+    // If batchNo provided, also create a ProductBatch record
+    if (batchNo) {
+      await prisma.productBatch.create({
+        data: {
+          productId: product.id,
+          batchNo,
+          mfgDate: mfgDate ? new Date(mfgDate) : null,
+          expDate: expDate ? new Date(expDate) : new Date(),
+          quantity: 0
+        }
+      });
+    }
+
+    // Return product with flattened batch info
+    const full = await prisma.product.findUnique({
+      where: { id: product.id },
+      include: { batches: true }
+    });
+    const batch = full.batches && full.batches.length > 0 ? full.batches[0] : null;
+    const result = { ...full, batchNo: batch ? batch.batchNo : null, mfgDate: batch ? batch.mfgDate : null };
+
+    createAuditLog(req.user.id, 'CREATE', 'Product', product.id, null, { name: product.name, sku: product.sku }, req.ip);
+
+    res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -219,11 +311,62 @@ app.post('/api/products', authMiddleware, async (req, res) => {
 app.put('/api/products/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const { name, sku, category, price, mrp, unit, caseQty, gstRate, description, expDate, reorderPoint, batchNo, mfgDate } = req.body;
+    const productData = {};
+    if (name !== undefined) productData.name = name;
+    if (sku !== undefined) productData.sku = sku;
+    if (category !== undefined) productData.category = category;
+    if (price !== undefined) productData.price = price;
+    if (mrp !== undefined) productData.mrp = mrp;
+    if (unit !== undefined) productData.unit = unit;
+    if (caseQty !== undefined) productData.caseQty = caseQty;
+    if (gstRate !== undefined) productData.gstRate = gstRate;
+    if (description !== undefined) productData.description = description;
+    if (expDate !== undefined) productData.expDate = expDate ? new Date(expDate) : null;
+    if (reorderPoint !== undefined) productData.reorderPoint = reorderPoint;
+
     const product = await prisma.product.update({
       where: { id },
-      data: req.body
+      data: productData
     });
-    res.json(product);
+
+    // Update or create ProductBatch if batchNo provided
+    if (batchNo) {
+      const existingBatch = await prisma.productBatch.findFirst({
+        where: { productId: id }
+      });
+      if (existingBatch) {
+        await prisma.productBatch.update({
+          where: { id: existingBatch.id },
+          data: {
+            batchNo,
+            mfgDate: mfgDate ? new Date(mfgDate) : null,
+            expDate: expDate ? new Date(expDate) : existingBatch.expDate
+          }
+        });
+      } else {
+        await prisma.productBatch.create({
+          data: {
+            productId: id,
+            batchNo,
+            mfgDate: mfgDate ? new Date(mfgDate) : null,
+            expDate: expDate ? new Date(expDate) : new Date(),
+            quantity: 0
+          }
+        });
+      }
+    }
+
+    const full = await prisma.product.findUnique({
+      where: { id },
+      include: { batches: true }
+    });
+    const batch0 = full.batches && full.batches.length > 0 ? full.batches[0] : null;
+    const result = { ...full, batchNo: batch0 ? batch0.batchNo : null, mfgDate: batch0 ? batch0.mfgDate : null };
+
+    createAuditLog(req.user.id, 'UPDATE', 'Product', id, null, { name: product.name }, req.ip);
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -234,6 +377,9 @@ app.delete('/api/products/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.product.delete({ where: { id } });
+
+    createAuditLog(req.user.id, 'DELETE', 'Product', id, null, null, req.ip);
+
     res.json({ message: 'Product deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -293,6 +439,12 @@ app.get('/api/branch-stock', authMiddleware, async (req, res) => {
 // Update branch stock
 app.put('/api/branch-stock', authMiddleware, async (req, res) => {
   try {
+    if (req.user.role === 'branch_manager') {
+      return res.status(403).json({ error: 'Branch managers must submit stock update requests for approval' });
+    }
+    if (req.user.role !== 'stock_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
     const { branchId, productId, quantity } = req.body;
 
     const stock = await prisma.branchStock.upsert({
@@ -452,6 +604,8 @@ app.post('/api/stock-transfer/to-branch', authMiddleware, async (req, res) => {
       return transfer;
     });
 
+    createAuditLog(req.user.id, 'CREATE', 'StockTransfer', result.id, null, { productId, toBranchId, quantity, type: 'company-to-branch' }, req.ip);
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -520,6 +674,8 @@ app.post('/api/stock-transfer/branch-to-branch', authMiddleware, async (req, res
       };
     });
 
+    createAuditLog(req.user.id, 'CREATE', 'StockTransfer', result.transfer.id, null, { productId, fromBranchId, toBranchId, quantity, type: 'branch-to-branch' }, req.ip);
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -585,11 +741,8 @@ app.post('/api/sales', authMiddleware, async (req, res) => {
     const { items, amountPaid = 0, ...saleData } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
-      // Generate bill number
-      const lastSale = await tx.sale.findFirst({
-        orderBy: { createdAt: 'desc' }
-      });
-      const billNumber = `INV-${String((lastSale ? parseInt(lastSale.billNumber.split('-')[1]) : 0) + 1).padStart(6, '0')}`;
+      // Generate serial-wise invoice number using time + sequence
+      const billNumber = await generateNextDocNumber(tx, 'sale', 'billNumber', 'INV');
 
       // Find or create customer by phone
       let customer = null;
@@ -731,6 +884,8 @@ app.post('/api/sales', authMiddleware, async (req, res) => {
       return sale;
     });
 
+    createAuditLog(req.user.id, 'CREATE', 'Sale', result.id, null, { billNumber: result.billNumber, amount: result.finalAmount, customer: result.customerName }, req.ip);
+
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -807,6 +962,8 @@ app.put('/api/sales/:id/approve', authMiddleware, async (req, res) => {
       }
     });
 
+    createAuditLog(req.user.id, 'APPROVE', 'Sale', id, null, { billNumber: sale.billNumber, amount: sale.finalAmount }, req.ip);
+
     res.json(sale);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -838,6 +995,8 @@ app.put('/api/sales/:id/reject', authMiddleware, async (req, res) => {
         branch: true
       }
     });
+
+    createAuditLog(req.user.id, 'REJECT', 'Sale', id, null, { billNumber: sale.billNumber, reason: rejectionReason }, req.ip);
 
     res.json(sale);
   } catch (error) {
@@ -908,6 +1067,72 @@ app.put('/api/sales/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Delete sale (pending by owner/admin, any by admin)
+app.delete('/api/sales/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existingSale = await prisma.sale.findUnique({
+      where: { id },
+      include: { items: true }
+    });
+
+    if (!existingSale) {
+      return res.status(404).json({ error: 'Sale not found' });
+    }
+
+    const isAdmin = req.user.role === 'stock_manager';
+    const isOwner = req.user.id === existingSale.salesmanId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!isAdmin && existingSale.status !== 'pending') {
+      return res.status(403).json({ error: 'Only pending sales can be deleted' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Restore salesman stock
+      for (const item of existingSale.items) {
+        await tx.salesmanStock.upsert({
+          where: {
+            salesmanId_productId: {
+              salesmanId: existingSale.salesmanId,
+              productId: item.productId
+            }
+          },
+          update: { quantity: { increment: item.quantity } },
+          create: {
+            salesmanId: existingSale.salesmanId,
+            branchId: existingSale.branchId,
+            productId: item.productId,
+            quantity: item.quantity
+          }
+        });
+      }
+
+      if (existingSale.customerId) {
+        await tx.customer.update({
+          where: { id: existingSale.customerId },
+          data: {
+            currentBalance: { decrement: (existingSale.finalAmount - (existingSale.amountPaid || 0)) },
+            totalPurchases: { decrement: existingSale.finalAmount },
+            totalPaid: { decrement: (existingSale.amountPaid || 0) }
+          }
+        });
+      }
+
+      await tx.customerTransaction.deleteMany({ where: { saleId: existingSale.id } });
+      await tx.payment.deleteMany({ where: { saleId: existingSale.id } });
+      await tx.sale.delete({ where: { id: existingSale.id } });
+    });
+
+    createAuditLog(req.user.id, 'DELETE', 'Sale', existingSale.id, null, { billNumber: existingSale.billNumber }, req.ip);
+    res.json({ message: 'Sale deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== CUSTOMER ROUTES ====================
 
 // Get all customers
@@ -969,6 +1194,9 @@ app.post('/api/customers', authMiddleware, async (req, res) => {
     const customer = await prisma.customer.create({
       data: req.body
     });
+
+    createAuditLog(req.user.id, 'CREATE', 'Customer', customer.id, null, { name: customer.name, phone: customer.phone }, req.ip);
+
     res.status(201).json(customer);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1168,6 +1396,8 @@ app.post('/api/payments', authMiddleware, async (req, res) => {
       }
     });
 
+    createAuditLog(req.user.id, 'CREATE', 'Payment', result.id, null, { customerId, amount, paymentMethod }, req.ip);
+
     res.status(201).json(completePayment);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1200,12 +1430,13 @@ app.get('/api/payments/summary', authMiddleware, async (req, res) => {
     });
 
     // Today's collections
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const nowPay = new Date();
+    const todayPayStr = `${nowPay.getFullYear()}-${String(nowPay.getMonth() + 1).padStart(2, '0')}-${String(nowPay.getDate()).padStart(2, '0')}`;
+    const todayPay = new Date(todayPayStr + 'T00:00:00.000Z');
     const todayPayments = await prisma.payment.aggregate({
       _sum: { amount: true },
       where: {
-        paymentDate: { gte: today }
+        paymentDate: { gte: todayPay }
       }
     });
 
@@ -1270,16 +1501,19 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Get pending orders for approval (Admin only)
+// Get pending orders for approval (Admin + Branch Manager)
 app.get('/api/orders/pending/all', authMiddleware, async (req, res) => {
   try {
-    // Check if user is stock_manager (admin)
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view pending orders' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
-
+    const where = { orderStatus: 'pending' };
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) where.branchId = managedBranchId;
+    }
     const orders = await prisma.order.findMany({
-      where: { orderStatus: 'pending' },
+      where,
       include: {
         items: { include: { product: true } },
         salesman: { select: { id: true, name: true, email: true } },
@@ -1298,11 +1532,8 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { items, amountPaid = 0, ...orderData } = req.body;
 
-    // Generate order number
-    const lastOrder = await prisma.order.findFirst({
-      orderBy: { createdAt: 'desc' }
-    });
-    const orderNumber = `PO-${String((lastOrder ? parseInt(lastOrder.orderNumber.split('-')[1]) : 0) + 1).padStart(6, '0')}`;
+    // Generate serial-wise purchase invoice number using time + sequence
+    const orderNumber = await generateNextDocNumber(prisma, 'order', 'orderNumber', 'PO');
 
     // Calculate payment status
     const finalAmount = orderData.finalAmount || 0;
@@ -1409,18 +1640,26 @@ app.put('/api/orders/:id', authMiddleware, async (req, res) => {
       return order;
     });
 
+    createAuditLog(req.user.id, 'CREATE', 'Order', result.id, null, { orderNumber: result.orderNumber, amount: result.finalAmount }, req.ip);
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Approve order (Admin only) - Converts to Tax Invoice/Sale
+// Approve order (Admin + Branch Manager) - Converts to Tax Invoice/Sale
 app.put('/api/orders/:id/approve', authMiddleware, async (req, res) => {
   try {
-    // Check if user is stock_manager (admin)
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can approve orders' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const orderCheck = await prisma.order.findUnique({ where: { id: req.params.id } });
+      if (!orderCheck || orderCheck.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only approve orders for your branch' });
+      }
     }
 
     const { id } = req.params;
@@ -1440,11 +1679,8 @@ app.put('/api/orders/:id/approve', authMiddleware, async (req, res) => {
         throw new Error('Order is not pending');
       }
 
-      // Generate bill number for the sale
-      const lastSale = await tx.sale.findFirst({
-        orderBy: { createdAt: 'desc' }
-      });
-      const billNumber = `INV-${String((lastSale ? parseInt(lastSale.billNumber.split('-')[1]) : 0) + 1).padStart(6, '0')}`;
+      // Generate serial-wise tax invoice number
+      const billNumber = await generateNextDocNumber(tx, 'sale', 'billNumber', 'INV');
 
       // Find or create customer by phone
       let customer = null;
@@ -1594,18 +1830,26 @@ app.put('/api/orders/:id/approve', authMiddleware, async (req, res) => {
       return { order: updatedOrder, sale };
     });
 
+    createAuditLog(req.user.id, 'APPROVE', 'Order', req.params.id, null, { orderNumber: result.order.orderNumber, convertedSaleId: result.sale.id }, req.ip);
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Reject order (Admin only)
+// Reject order (Admin + Branch Manager)
 app.put('/api/orders/:id/reject', authMiddleware, async (req, res) => {
   try {
-    // Check if user is stock_manager (admin)
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can reject orders' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const orderCheck = await prisma.order.findUnique({ where: { id: req.params.id } });
+      if (!orderCheck || orderCheck.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only reject orders for your branch' });
+      }
     }
 
     const { id } = req.params;
@@ -1625,6 +1869,8 @@ app.put('/api/orders/:id/reject', authMiddleware, async (req, res) => {
         branch: true
       }
     });
+
+    createAuditLog(req.user.id, 'REJECT', 'Order', id, null, { orderNumber: order.orderNumber, reason: rejectionReason }, req.ip);
 
     res.json(order);
   } catch (error) {
@@ -1660,15 +1906,22 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
 
 // IMPORTANT: Specific routes MUST come before :id routes
 
-// Get pending expenditures (Admin only)
+// Get pending expenditures (Admin + Branch Manager)
 app.get('/api/expenditures/pending/all', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view pending expenditures' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
-
+    const where = { status: 'pending' };
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where.userId = { in: branchUserIds };
+      }
+    }
     const expenditures = await prisma.expenditure.findMany({
-      where: { status: 'pending' },
+      where,
       include: {
         user: { select: { id: true, name: true, email: true, employeeCode: true } }
       },
@@ -1680,17 +1933,23 @@ app.get('/api/expenditures/pending/all', authMiddleware, async (req, res) => {
   }
 });
 
-// Get expenditure summary (Admin only)
+// Get expenditure summary (Admin + Branch Manager)
 app.get('/api/expenditures/summary', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view summary' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
 
     const { userId, month, year } = req.query;
     const where = {};
 
-    if (userId) {
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where.userId = userId ? userId : { in: branchUserIds };
+      }
+    } else if (userId) {
       where.userId = userId;
     }
 
@@ -1752,10 +2011,18 @@ app.get('/api/expenditures', authMiddleware, async (req, res) => {
     const where = {};
 
     // Non-admin users can only see their own expenditures
-    if (req.user.role !== 'stock_manager') {
+    if (req.user.role === 'stock_manager') {
+      if (userId) where.userId = userId;
+    } else if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where.userId = userId ? userId : { in: branchUserIds };
+      } else {
+        where.userId = req.user.id;
+      }
+    } else {
       where.userId = req.user.id;
-    } else if (userId) {
-      where.userId = userId;
     }
 
     if (status) {
@@ -1909,11 +2176,18 @@ app.delete('/api/expenditures/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Approve expenditure (Admin only)
+// Approve expenditure (Admin + Branch Manager)
 app.put('/api/expenditures/:id/approve', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can approve expenditures' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const exp = await prisma.expenditure.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
+      if (!exp || exp.user.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only approve expenditures for your branch employees' });
+      }
     }
 
     const { id } = req.params;
@@ -1930,17 +2204,26 @@ app.put('/api/expenditures/:id/approve', authMiddleware, async (req, res) => {
       }
     });
 
+    createAuditLog(req.user.id, 'APPROVE', 'Expenditure', id, null, { amount: expenditure.amount, userId: expenditure.userId }, req.ip);
+
     res.json(expenditure);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Reject expenditure (Admin only)
+// Reject expenditure (Admin + Branch Manager)
 app.put('/api/expenditures/:id/reject', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can reject expenditures' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const exp = await prisma.expenditure.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
+      if (!exp || exp.user.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only reject expenditures for your branch employees' });
+      }
     }
 
     const { id } = req.params;
@@ -1958,6 +2241,8 @@ app.put('/api/expenditures/:id/reject', authMiddleware, async (req, res) => {
         user: { select: { id: true, name: true, email: true, employeeCode: true } }
       }
     });
+
+    createAuditLog(req.user.id, 'REJECT', 'Expenditure', id, null, { amount: expenditure.amount, reason: rejectionReason }, req.ip);
 
     res.json(expenditure);
   } catch (error) {
@@ -2259,23 +2544,33 @@ app.get('/api/attendance/my-history', authMiddleware, async (req, res) => {
   }
 });
 
-// Get all attendance (Admin)
+// Get all attendance (Admin + Branch Manager)
 app.get('/api/attendance/all', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view all attendance' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
 
     const { userId, date, month, year, approvalStatus } = req.query;
     const where = {};
 
-    if (userId) where.userId = userId;
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where.userId = userId ? userId : { in: branchUserIds };
+      }
+    } else if (userId) {
+      where.userId = userId;
+    }
+
     if (approvalStatus) where.approvalStatus = approvalStatus;
 
     if (date) {
-      const d = new Date(date);
-      d.setHours(0, 0, 0, 0);
-      where.date = d;
+      const dStart = new Date(date + 'T00:00:00.000Z');
+      const dEnd = new Date(dStart);
+      dEnd.setUTCDate(dEnd.getUTCDate() + 1);
+      where.date = { gte: dStart, lt: dEnd };
     } else if (month && year) {
       const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
       const endDate = new Date(parseInt(year), parseInt(month), 0);
@@ -2296,15 +2591,22 @@ app.get('/api/attendance/all', authMiddleware, async (req, res) => {
   }
 });
 
-// Get pending attendance approvals (Admin)
+// Get pending attendance approvals (Admin + Branch Manager)
 app.get('/api/attendance/pending', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view pending attendance' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
-
+    const where = { approvalStatus: 'pending' };
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where.userId = { in: branchUserIds };
+      }
+    }
     const attendance = await prisma.attendance.findMany({
-      where: { approvalStatus: 'pending' },
+      where,
       include: {
         user: { select: { id: true, name: true, email: true, employeeCode: true, role: true, profilePhoto: true } }
       },
@@ -2317,11 +2619,18 @@ app.get('/api/attendance/pending', authMiddleware, async (req, res) => {
   }
 });
 
-// Approve attendance (Admin)
+// Approve attendance (Admin + Branch Manager)
 app.put('/api/attendance/:id/approve', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can approve attendance' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const att = await prisma.attendance.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
+      if (!att || att.user.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only approve attendance for your branch employees' });
+      }
     }
 
     const { id } = req.params;
@@ -2337,17 +2646,26 @@ app.put('/api/attendance/:id/approve', authMiddleware, async (req, res) => {
       }
     });
 
+    createAuditLog(req.user.id, 'APPROVE', 'Attendance', id, null, { userId: attendance.userId }, req.ip);
+
     res.json(attendance);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Reject attendance (Admin)
+// Reject attendance (Admin + Branch Manager)
 app.put('/api/attendance/:id/reject', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can reject attendance' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const att = await prisma.attendance.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
+      if (!att || att.user.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only reject attendance for your branch employees' });
+      }
     }
 
     const { id } = req.params;
@@ -2366,17 +2684,19 @@ app.put('/api/attendance/:id/reject', authMiddleware, async (req, res) => {
       }
     });
 
+    createAuditLog(req.user.id, 'REJECT', 'Attendance', id, null, { userId: attendance.userId, notes }, req.ip);
+
     res.json(attendance);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get attendance summary (Admin)
+// Get attendance summary (Admin + Branch Manager)
 app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view summary' });
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
 
     const { month, year } = req.query;
@@ -2386,19 +2706,32 @@ app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
     const startDate = new Date(y, m - 1, 1);
     const endDate = new Date(y, m, 0);
 
+    // Branch manager: scope to their branch users
+    let userFilter = {};
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        userFilter = { userId: { in: branchUserIds } };
+      }
+    }
+
     const [present, absent, halfDay, late, pending] = await Promise.all([
-      prisma.attendance.count({ where: { date: { gte: startDate, lte: endDate }, status: 'present' } }),
-      prisma.attendance.count({ where: { date: { gte: startDate, lte: endDate }, status: 'absent' } }),
-      prisma.attendance.count({ where: { date: { gte: startDate, lte: endDate }, status: 'half_day' } }),
-      prisma.attendance.count({ where: { date: { gte: startDate, lte: endDate }, status: 'late' } }),
-      prisma.attendance.count({ where: { date: { gte: startDate, lte: endDate }, approvalStatus: 'pending' } })
+      prisma.attendance.count({ where: { ...userFilter, date: { gte: startDate, lte: endDate }, status: 'present' } }),
+      prisma.attendance.count({ where: { ...userFilter, date: { gte: startDate, lte: endDate }, status: 'absent' } }),
+      prisma.attendance.count({ where: { ...userFilter, date: { gte: startDate, lte: endDate }, status: 'half_day' } }),
+      prisma.attendance.count({ where: { ...userFilter, date: { gte: startDate, lte: endDate }, status: 'late' } }),
+      prisma.attendance.count({ where: { ...userFilter, date: { gte: startDate, lte: endDate }, approvalStatus: 'pending' } })
     ]);
 
     // Get today's attendance count
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const nowAtt = new Date();
+    const todayAttStr = `${nowAtt.getFullYear()}-${String(nowAtt.getMonth() + 1).padStart(2, '0')}-${String(nowAtt.getDate()).padStart(2, '0')}`;
+    const todayAtt = new Date(todayAttStr + 'T00:00:00.000Z');
+    const nextDayAtt = new Date(todayAtt);
+    nextDayAtt.setUTCDate(nextDayAtt.getUTCDate() + 1);
     const todayPresent = await prisma.attendance.count({
-      where: { date: today }
+      where: { date: { gte: todayAtt, lt: nextDayAtt } }
     });
     const totalUsers = await prisma.user.count();
 
@@ -2417,6 +2750,1170 @@ app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ==================== FEATURE 2: SALES RETURNS ====================
+
+app.get('/api/sales-returns', authMiddleware, async (req, res) => {
+  try {
+    const returns = await prisma.salesReturn.findMany({
+      include: { sale: true, customer: true, items: { include: { product: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(returns);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/sales-returns', authMiddleware, async (req, res) => {
+  try {
+    const { saleId, customerId, reason, items } = req.body;
+    const totalAmount = items.reduce((s, i) => s + i.total, 0);
+    const count = await prisma.salesReturn.count();
+    const returnNumber = `RET-${String(count + 1).padStart(6, '0')}`;
+    const result = await prisma.salesReturn.create({
+      data: { returnNumber, saleId, customerId, reason, totalAmount, items: { create: items } },
+      include: { items: true }
+    });
+
+    createAuditLog(req.user.id, 'CREATE', 'SalesReturn', result.id, null, { returnNumber, saleId, totalAmount }, req.ip);
+
+    res.json(result);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/sales-returns/:id/approve', authMiddleware, async (req, res) => {
+  try {
+    const ret = await prisma.salesReturn.update({
+      where: { id: req.params.id },
+      data: { status: 'approved', approvedBy: req.user.id, approvedAt: new Date() },
+      include: { items: true }
+    });
+    // Restore stock to company
+    for (const item of ret.items) {
+      await prisma.companyStock.upsert({
+        where: { productId: item.productId },
+        update: { quantity: { increment: item.quantity } },
+        create: { productId: item.productId, quantity: item.quantity }
+      });
+    }
+    // Create credit note transaction
+    if (ret.customerId) {
+      await prisma.customer.update({
+        where: { id: ret.customerId },
+        data: { currentBalance: { decrement: ret.totalAmount } }
+      });
+      const cust = await prisma.customer.findUnique({ where: { id: ret.customerId } });
+      await prisma.customerTransaction.create({
+        data: { customerId: ret.customerId, saleId: ret.saleId, type: 'refund', amount: ret.totalAmount, balanceAfter: cust.currentBalance, description: `Sales Return ${ret.returnNumber}` }
+      });
+    }
+
+    createAuditLog(req.user.id, 'APPROVE', 'SalesReturn', req.params.id, null, { returnNumber: ret.returnNumber, totalAmount: ret.totalAmount }, req.ip);
+
+    res.json(ret);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/sales-returns/:id/reject', authMiddleware, async (req, res) => {
+  try {
+    const ret = await prisma.salesReturn.update({
+      where: { id: req.params.id },
+      data: { status: 'rejected', approvedBy: req.user.id, approvedAt: new Date() }
+    });
+
+    createAuditLog(req.user.id, 'REJECT', 'SalesReturn', req.params.id, null, null, req.ip);
+
+    res.json(ret);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 3: LOW STOCK ALERTS ====================
+
+app.get('/api/stock-alerts', authMiddleware, async (req, res) => {
+  try {
+    const products = await prisma.product.findMany({
+      where: { reorderPoint: { not: null } },
+      include: { companyStock: true, branchStocks: true }
+    });
+    const alerts = products.filter(p => {
+      const totalQty = (p.companyStock?.quantity || 0) + p.branchStocks.reduce((s, b) => s + b.quantity, 0);
+      return totalQty <= (p.reorderPoint || 0);
+    }).map(p => ({
+      ...p,
+      totalStock: (p.companyStock?.quantity || 0) + p.branchStocks.reduce((s, b) => s + b.quantity, 0),
+    }));
+    res.json(alerts);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/products/:id/reorder-point', authMiddleware, async (req, res) => {
+  try {
+    const product = await prisma.product.update({
+      where: { id: req.params.id },
+      data: { reorderPoint: req.body.reorderPoint }
+    });
+    res.json(product);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 4: PAYROLL PROCESSING ====================
+
+app.post('/api/payroll/generate', authMiddleware, async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    const employees = await prisma.user.findMany({ where: { role: { not: 'stock_manager' } } });
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const payroll = [];
+
+    for (const emp of employees) {
+      const attendance = await prisma.attendance.findMany({
+        where: { userId: emp.id, date: { gte: new Date(year, month - 1, 1), lte: new Date(year, month - 1, daysInMonth) } }
+      });
+      const presentDays = attendance.filter(a => a.status === 'present').length;
+      const halfDays = attendance.filter(a => a.status === 'half_day').length;
+      const lateDays = attendance.filter(a => a.status === 'late').length;
+      const paidDays = presentDays + lateDays + halfDays * 0.5;
+      const lopDays = Math.max(0, daysInMonth - paidDays);
+      const prorateFactor = daysInMonth > 0 ? paidDays / daysInMonth : 1;
+
+      const totalEarningFull = (emp.basicSalary || 0) + (emp.houseRentAllowance || 0) + (emp.conveyanceAllowance || 0) +
+        (emp.medicalAllowance || 0) + (emp.uniformAllowance || 0) + (emp.educationAllowance || 0) +
+        (emp.ltaAllowance || 0) + (emp.specialAllowance || 0);
+      const totalEarning = Math.round(totalEarningFull * prorateFactor);
+      const pTax = 200;
+      const pf = emp.pfDeduction || 0;
+      const netPay = totalEarning - pTax - pf;
+
+      payroll.push({
+        employeeId: emp.id, employeeName: emp.name, employeeCode: emp.employeeCode,
+        designation: emp.designation, bankName: emp.bankName, bankAccountNo: emp.bankAccountNo,
+        bankIfsc: emp.bankIfscCode, daysInMonth, presentDays, halfDays, lateDays, paidDays, lopDays,
+        grossSalary: totalEarningFull, proratedEarning: totalEarning, pTax, pf,
+        lopDeduction: totalEarningFull - totalEarning, netPay, month, year
+      });
+    }
+    res.json(payroll);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 6: PRODUCT EXPIRY TRACKING ====================
+
+app.get('/api/product-batches', authMiddleware, async (req, res) => {
+  try {
+    const { daysToExpiry } = req.query;
+    const where = {};
+    if (daysToExpiry) {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + parseInt(daysToExpiry));
+      where.expDate = { lte: futureDate };
+      where.quantity = { gt: 0 };
+    }
+    const batches = await prisma.productBatch.findMany({
+      where, include: { product: true, branch: true }, orderBy: { expDate: 'asc' }
+    });
+    res.json(batches);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/product-batches', authMiddleware, async (req, res) => {
+  try {
+    const batch = await prisma.productBatch.create({ data: req.body });
+    res.json(batch);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 7: SALESMAN PERFORMANCE ====================
+
+app.get('/api/performance/salesman', authMiddleware, async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const m = parseInt(month) || new Date().getMonth() + 1;
+    const y = parseInt(year) || new Date().getFullYear();
+    const startDate = new Date(y, m - 1, 1);
+    const endDate = new Date(y, m, 0);
+
+    const salesmen = await prisma.user.findMany({ where: { role: 'salesman' }, include: { branch: true } });
+    const performance = [];
+
+    for (const sm of salesmen) {
+      const sales = await prisma.sale.findMany({
+        where: { salesmanId: sm.id, status: 'approved', saleDate: { gte: startDate, lte: endDate } }
+      });
+      const totalSales = sales.length;
+      const totalAmount = sales.reduce((s, sale) => s + sale.finalAmount, 0);
+      const totalCollected = sales.reduce((s, sale) => s + sale.amountPaid, 0);
+      const attendance = await prisma.attendance.count({
+        where: { userId: sm.id, date: { gte: startDate, lte: endDate }, status: { in: ['present', 'late'] } }
+      });
+
+      performance.push({
+        id: sm.id, name: sm.name, branch: sm.branch?.name || 'N/A',
+        totalSales, totalAmount, totalCollected, outstanding: totalAmount - totalCollected,
+        presentDays: attendance, avgSalePerDay: attendance > 0 ? Math.round(totalAmount / attendance) : 0
+      });
+    }
+    performance.sort((a, b) => b.totalAmount - a.totalAmount);
+    res.json(performance);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 8: PURCHASE/SUPPLIER MANAGEMENT ====================
+
+app.get('/api/suppliers', authMiddleware, async (req, res) => {
+  try {
+    const suppliers = await prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+    res.json(suppliers);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/suppliers', authMiddleware, async (req, res) => {
+  try {
+    const supplier = await prisma.supplier.create({ data: req.body });
+    res.json(supplier);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/suppliers/:id', authMiddleware, async (req, res) => {
+  try {
+    const supplier = await prisma.supplier.update({ where: { id: req.params.id }, data: req.body });
+    res.json(supplier);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/suppliers/:id', authMiddleware, async (req, res) => {
+  try {
+    await prisma.supplier.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.get('/api/purchases', authMiddleware, async (req, res) => {
+  try {
+    const purchases = await prisma.purchase.findMany({
+      include: { supplier: true, items: { include: { product: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(purchases);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/purchases', authMiddleware, async (req, res) => {
+  try {
+    const { supplierId, items, totalAmount, discount, finalAmount, cgstRate, sgstRate, amountPaid, notes } = req.body;
+    const count = await prisma.purchase.count();
+    const purchaseNumber = `PUR-${String(count + 1).padStart(6, '0')}`;
+    const purchase = await prisma.purchase.create({
+      data: {
+        purchaseNumber, supplierId, totalAmount, discount, finalAmount, cgstRate, sgstRate,
+        amountPaid: amountPaid || 0, balanceDue: finalAmount - (amountPaid || 0),
+        paymentStatus: amountPaid >= finalAmount ? 'paid' : amountPaid > 0 ? 'partial' : 'unpaid',
+        notes, items: { create: items }
+      },
+      include: { items: true, supplier: true }
+    });
+    // Add stock to company
+    for (const item of items) {
+      await prisma.companyStock.upsert({
+        where: { productId: item.productId },
+        update: { quantity: { increment: item.quantity } },
+        create: { productId: item.productId, quantity: item.quantity }
+      });
+    }
+
+    createAuditLog(req.user.id, 'CREATE', 'Purchase', purchase.id, null, { purchaseNumber: purchase.purchaseNumber, amount: purchase.finalAmount }, req.ip);
+
+    res.json(purchase);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 10: DAILY COLLECTION REPORT ====================
+
+app.get('/api/reports/daily-collection', authMiddleware, async (req, res) => {
+  try {
+    const { date } = req.query;
+    const targetDate = date ? new Date(date) : new Date();
+    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+
+    const payments = await prisma.payment.findMany({
+      where: { paymentDate: { gte: startOfDay, lt: endOfDay } },
+      include: { customer: true }
+    });
+
+    const sales = await prisma.sale.findMany({
+      where: { saleDate: { gte: startOfDay, lt: endOfDay }, status: 'approved' },
+      include: { salesman: true }
+    });
+
+    const bySalesman = {};
+    sales.forEach(s => {
+      if (!bySalesman[s.salesmanId]) bySalesman[s.salesmanId] = { name: s.salesman.name, sales: 0, amount: 0, collected: 0 };
+      bySalesman[s.salesmanId].sales++;
+      bySalesman[s.salesmanId].amount += s.finalAmount;
+      bySalesman[s.salesmanId].collected += s.amountPaid;
+    });
+
+    const byMethod = { cash: 0, card: 0, upi: 0, credit: 0 };
+    payments.forEach(p => { byMethod[p.paymentMethod] = (byMethod[p.paymentMethod] || 0) + p.amount; });
+
+    res.json({
+      date: startOfDay, totalSales: sales.length,
+      totalSaleAmount: sales.reduce((s, sale) => s + sale.finalAmount, 0),
+      totalCollected: payments.reduce((s, p) => s + p.amount, 0),
+      paymentsByMethod: byMethod, bySalesman: Object.values(bySalesman), payments
+    });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 12: LEAVE MANAGEMENT ====================
+
+app.get('/api/leaves', authMiddleware, async (req, res) => {
+  try {
+    let where = {};
+    if (req.user.role === 'stock_manager') {
+      where = {};
+    } else if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where = { userId: { in: branchUserIds } };
+      } else {
+        where = { userId: req.user.id };
+      }
+    } else {
+      where = { userId: req.user.id };
+    }
+    if (req.query.status) where.status = req.query.status;
+    const leaves = await prisma.leaveRequest.findMany({
+      where, include: { user: { select: { id: true, name: true, email: true, employeeCode: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(leaves);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/leaves', authMiddleware, async (req, res) => {
+  try {
+    const { leaveType, startDate, endDate, reason } = req.body;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    const leave = await prisma.leaveRequest.create({
+      data: { userId: req.user.id, leaveType, startDate: start, endDate: end, totalDays, reason }
+    });
+    res.json(leave);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/leaves/:id/approve', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const leaveCheck = await prisma.leaveRequest.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
+      if (!leaveCheck || leaveCheck.user.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only approve leaves for your branch employees' });
+      }
+    }
+    const leave = await prisma.leaveRequest.update({
+      where: { id: req.params.id },
+      data: { status: 'approved', approvedBy: req.user.id, approvedAt: new Date() }
+    });
+
+    createAuditLog(req.user.id, 'APPROVE', 'LeaveRequest', req.params.id, null, { userId: leave.userId, leaveType: leave.leaveType }, req.ip);
+
+    res.json(leave);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/leaves/:id/reject', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      const leaveCheck = await prisma.leaveRequest.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
+      if (!leaveCheck || leaveCheck.user.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only reject leaves for your branch employees' });
+      }
+    }
+    const leave = await prisma.leaveRequest.update({
+      where: { id: req.params.id },
+      data: { status: 'rejected', approvedBy: req.user.id, approvedAt: new Date(), rejectionReason: req.body.reason }
+    });
+
+    createAuditLog(req.user.id, 'REJECT', 'LeaveRequest', req.params.id, null, { userId: leave.userId, reason: req.body.reason }, req.ip);
+
+    res.json(leave);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 13: DAMAGE/WASTAGE TRACKING ====================
+
+app.get('/api/damages', authMiddleware, async (req, res) => {
+  try {
+    const where = {};
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) where.branchId = managedBranchId;
+    }
+    const damages = await prisma.damageRecord.findMany({
+      where,
+      include: { product: true, branch: true, reportedByUser: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(damages);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/damages', authMiddleware, async (req, res) => {
+  try {
+    const { productId, branchId, quantity, reason } = req.body;
+    const damage = await prisma.damageRecord.create({
+      data: { productId, branchId: branchId || null, quantity, reason, reportedBy: req.user.id }
+    });
+    res.json(damage);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/damages/:id/approve', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const damage = await prisma.damageRecord.findUnique({ where: { id: req.params.id } });
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (!damage || damage.branchId !== managedBranchId) {
+        return res.status(403).json({ error: 'Can only approve damages for your branch' });
+      }
+    }
+    // Deduct stock
+    if (damage.branchId) {
+      await prisma.branchStock.updateMany({
+        where: { branchId: damage.branchId, productId: damage.productId },
+        data: { quantity: { decrement: damage.quantity } }
+      });
+    } else {
+      await prisma.companyStock.update({
+        where: { productId: damage.productId },
+        data: { quantity: { decrement: damage.quantity } }
+      });
+    }
+    const updated = await prisma.damageRecord.update({
+      where: { id: req.params.id },
+      data: { status: 'approved', approvedBy: req.user.id, approvedAt: new Date() }
+    });
+
+    createAuditLog(req.user.id, 'APPROVE', 'DamageRecord', req.params.id, null, { productId: damage.productId, quantity: damage.quantity }, req.ip);
+
+    res.json(updated);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 14: CUSTOMER CREDIT LIMIT ====================
+
+app.put('/api/customers/:id/credit-limit', authMiddleware, async (req, res) => {
+  try {
+    const customer = await prisma.customer.update({
+      where: { id: req.params.id },
+      data: { creditLimit: req.body.creditLimit }
+    });
+    res.json(customer);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.get('/api/customers/credit-check/:customerId', authMiddleware, async (req, res) => {
+  try {
+    const customer = await prisma.customer.findUnique({ where: { id: req.params.customerId } });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    const creditLimit = customer.creditLimit || 0;
+    const currentBalance = customer.currentBalance || 0;
+    const availableCredit = creditLimit > 0 ? creditLimit - currentBalance : Infinity;
+    res.json({ creditLimit, currentBalance, availableCredit, canPurchase: availableCredit > 0 });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== FEATURE 15: AUDIT LOG ====================
+
+app.get('/api/audit-logs', authMiddleware, async (req, res) => {
+  try {
+    const { entity, action, userId, limit: lmt } = req.query;
+    const where = {};
+    if (entity) where.entity = entity;
+    if (action) where.action = action;
+    if (userId) where.userId = userId;
+    const logs = await prisma.auditLog.findMany({
+      where, include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' }, take: parseInt(lmt) || 100
+    });
+    res.json(logs);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Helper to create audit log
+async function createAuditLog(userId, action, entity, entityId, oldValues, newValues, ipAddress) {
+  try {
+    await prisma.auditLog.create({
+      data: { userId, action, entity, entityId, oldValues: oldValues ? JSON.stringify(oldValues) : null, newValues: newValues ? JSON.stringify(newValues) : null, ipAddress }
+    });
+  } catch (e) { console.error('Audit log error:', e.message); }
+}
+
+// Helper to get the branch managed by a user
+async function getManagedBranchId(userId) {
+  const branch = await prisma.branch.findFirst({ where: { managerId: userId } });
+  return branch ? branch.id : null;
+}
+
+// Helper to get user IDs in a branch
+async function getBranchUserIds(branchId) {
+  const users = await prisma.user.findMany({ where: { branchId }, select: { id: true } });
+  return users.map(u => u.id);
+}
+
+// ==================== STOCK UPDATE REQUEST ROUTES ====================
+
+// Create stock update request (Branch Manager only)
+app.post('/api/stock-update-requests', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'branch_manager') {
+      return res.status(403).json({ error: 'Only branch managers can request stock updates' });
+    }
+    const { branchId, productId, requestedQuantity, requestType, reason } = req.body;
+    const managedBranchId = await getManagedBranchId(req.user.id);
+    if (!managedBranchId || managedBranchId !== branchId) {
+      return res.status(403).json({ error: 'You can only request changes for your own branch' });
+    }
+    const current = await prisma.branchStock.findUnique({
+      where: { branchId_productId: { branchId, productId } }
+    });
+    const request = await prisma.stockUpdateRequest.create({
+      data: {
+        branchId, productId,
+        requestType: requestType || 'update_quantity',
+        currentQuantity: current?.quantity || 0,
+        requestedQuantity,
+        reason: reason || null,
+        requestedBy: req.user.id
+      },
+      include: { product: true, branch: true }
+    });
+    // Notify all admins
+    const admins = await prisma.user.findMany({ where: { role: 'stock_manager' } });
+    for (const admin of admins) {
+      await prisma.notification.create({
+        data: {
+          userId: admin.id, type: 'stock_update_request',
+          title: 'Stock Update Request',
+          message: `${req.user.name} requested to change ${request.product.name} qty from ${request.currentQuantity || 0} to ${requestedQuantity} at ${request.branch.name}`,
+          entityType: 'StockUpdateRequest', entityId: request.id, createdBy: req.user.id
+        }
+      });
+    }
+    createAuditLog(req.user.id, 'CREATE', 'StockUpdateRequest', request.id, null, { productId, branchId, requestedQuantity }, req.ip);
+    res.status(201).json(request);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get stock update requests
+app.get('/api/stock-update-requests', authMiddleware, async (req, res) => {
+  try {
+    const { status, branchId } = req.query;
+    const where = {};
+    if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      where.branchId = managedBranchId;
+    } else if (req.user.role !== 'stock_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (status) where.status = status;
+    if (branchId && req.user.role === 'stock_manager') where.branchId = branchId;
+    const requests = await prisma.stockUpdateRequest.findMany({
+      where,
+      include: {
+        product: true, branch: true,
+        requestedByUser: { select: { id: true, name: true, email: true, employeeCode: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(requests);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Approve stock update request (Admin only)
+app.put('/api/stock-update-requests/:id/approve', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager') {
+      return res.status(403).json({ error: 'Only admin can approve stock changes' });
+    }
+    const request = await prisma.stockUpdateRequest.findUnique({
+      where: { id: req.params.id },
+      include: { product: true, branch: true }
+    });
+    if (!request || request.status !== 'pending') {
+      return res.status(400).json({ error: 'Invalid or already processed request' });
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.branchStock.upsert({
+        where: { branchId_productId: { branchId: request.branchId, productId: request.productId } },
+        update: { quantity: request.requestedQuantity, lastUpdated: new Date() },
+        create: { branchId: request.branchId, productId: request.productId, quantity: request.requestedQuantity }
+      });
+      await tx.stockUpdateRequest.update({
+        where: { id: req.params.id },
+        data: { status: 'approved', approvedBy: req.user.id, approvedAt: new Date() }
+      });
+    });
+    await prisma.notification.create({
+      data: {
+        userId: request.requestedBy, type: 'stock_approved',
+        title: 'Stock Update Approved',
+        message: `Your request to update ${request.product.name} to qty ${request.requestedQuantity} at ${request.branch.name} has been approved`,
+        entityType: 'StockUpdateRequest', entityId: request.id, createdBy: req.user.id
+      }
+    });
+    createAuditLog(req.user.id, 'APPROVE', 'StockUpdateRequest', req.params.id, null, { productId: request.productId, quantity: request.requestedQuantity }, req.ip);
+    res.json({ message: 'Stock update approved and applied' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Reject stock update request (Admin only)
+app.put('/api/stock-update-requests/:id/reject', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager') {
+      return res.status(403).json({ error: 'Only admin can reject stock changes' });
+    }
+    const { rejectionReason } = req.body;
+    const request = await prisma.stockUpdateRequest.findUnique({
+      where: { id: req.params.id },
+      include: { product: true, branch: true }
+    });
+    if (!request || request.status !== 'pending') {
+      return res.status(400).json({ error: 'Invalid or already processed request' });
+    }
+    await prisma.stockUpdateRequest.update({
+      where: { id: req.params.id },
+      data: { status: 'rejected', approvedBy: req.user.id, approvedAt: new Date(), rejectionReason: rejectionReason || null }
+    });
+    await prisma.notification.create({
+      data: {
+        userId: request.requestedBy, type: 'stock_rejected',
+        title: 'Stock Update Rejected',
+        message: `Your request to update ${request.product.name} at ${request.branch.name} was rejected. ${rejectionReason ? 'Reason: ' + rejectionReason : ''}`,
+        entityType: 'StockUpdateRequest', entityId: request.id, createdBy: req.user.id
+      }
+    });
+    createAuditLog(req.user.id, 'REJECT', 'StockUpdateRequest', req.params.id, null, { reason: rejectionReason }, req.ip);
+    res.json({ message: 'Stock update request rejected' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== NOTIFICATION ROUTES ====================
+
+app.get('/api/notifications', authMiddleware, async (req, res) => {
+  try {
+    const where = { userId: req.user.id };
+    if (req.query.unreadOnly === 'true') where.isRead = false;
+    const notifications = await prisma.notification.findMany({
+      where, orderBy: { createdAt: 'desc' }, take: 50
+    });
+    res.json(notifications);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/notifications/:id/read', authMiddleware, async (req, res) => {
+  try {
+    await prisma.notification.update({ where: { id: req.params.id }, data: { isRead: true } });
+    res.json({ message: 'Marked as read' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/notifications/read-all', authMiddleware, async (req, res) => {
+  try {
+    await prisma.notification.updateMany({ where: { userId: req.user.id, isRead: false }, data: { isRead: true } });
+    res.json({ message: 'All marked as read' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.get('/api/notifications/unread-count', authMiddleware, async (req, res) => {
+  try {
+    const count = await prisma.notification.count({ where: { userId: req.user.id, isRead: false } });
+    res.json({ count });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==================== GPS TRACKING & ROUTE MANAGEMENT ====================
+
+// Record salesman location (called from mobile app every few minutes)
+app.post('/api/gps/location', authMiddleware, async (req, res) => {
+  try {
+    const { latitude, longitude, accuracy, speed, heading, altitude, batteryLevel, address } = req.body;
+
+    const location = await prisma.salesmanLocation.create({
+      data: {
+        userId: req.user.id,
+        latitude,
+        longitude,
+        accuracy,
+        speed,
+        heading,
+        altitude,
+        batteryLevel,
+        address
+      }
+    });
+
+    // Update daily route summary
+    const nowLoc = new Date();
+    const todayLocStr = `${nowLoc.getFullYear()}-${String(nowLoc.getMonth() + 1).padStart(2, '0')}-${String(nowLoc.getDate()).padStart(2, '0')}`;
+    const todayLoc = new Date(todayLocStr + 'T00:00:00.000Z');
+    const nextDayLoc = new Date(todayLoc);
+    nextDayLoc.setUTCDate(nextDayLoc.getUTCDate() + 1);
+
+    try {
+      // Fetch previous GPS location from today to calculate distance
+      const previousLocation = await prisma.salesmanLocation.findFirst({
+        where: {
+          userId: req.user.id,
+          timestamp: { gte: todayLoc, lt: nextDayLoc },
+          id: { not: location.id }
+        },
+        orderBy: { timestamp: 'desc' }
+      });
+
+      let distanceIncrement = 0;
+      if (previousLocation) {
+        const distMeters = calculateDistance(
+          previousLocation.latitude, previousLocation.longitude,
+          latitude, longitude
+        );
+        // Filter GPS drift: only count if between 10m and 500m
+        if (distMeters >= 10 && distMeters <= 500) {
+          distanceIncrement = distMeters / 1000; // convert to km
+        }
+      }
+
+      const existingSummary = await prisma.dailyRouteSummary.findFirst({
+        where: { userId: req.user.id, date: { gte: todayLoc, lt: nextDayLoc } }
+      });
+
+      if (existingSummary) {
+        await prisma.dailyRouteSummary.update({
+          where: { id: existingSummary.id },
+          data: {
+            endTime: new Date(),
+            ...(distanceIncrement > 0 ? { totalDistanceKm: { increment: distanceIncrement } } : {})
+          }
+        });
+      } else {
+        await prisma.dailyRouteSummary.create({
+          data: { userId: req.user.id, date: todayLoc, startTime: new Date(), totalDistanceKm: distanceIncrement }
+        });
+      }
+    } catch (e) {
+      console.error('Summary update error:', e.message);
+    }
+
+    res.json(location);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get salesman's location history for a date
+app.get('/api/gps/history/:userId', authMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { date } = req.query;
+
+    // Only allow stock_manager or self to view
+    if (req.user.role !== 'stock_manager' && req.user.id !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const targetDate = date ? new Date(date) : new Date();
+    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+
+    const locations = await prisma.salesmanLocation.findMany({
+      where: {
+        userId,
+        timestamp: { gte: startOfDay, lt: endOfDay }
+      },
+      orderBy: { timestamp: 'asc' }
+    });
+
+    res.json(locations);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get all salesmen's current locations (Admin dashboard)
+app.get('/api/gps/live-tracking', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager') {
+      return res.status(403).json({ error: 'Only admin can view live tracking' });
+    }
+
+    // Get latest location for each active salesman
+    const salesmen = await prisma.user.findMany({
+      where: { role: 'salesman' },
+      select: { id: true, name: true, phone: true, employeeCode: true, branch: true }
+    });
+
+    const liveData = [];
+    for (const sm of salesmen) {
+      const lastLocation = await prisma.salesmanLocation.findFirst({
+        where: { userId: sm.id },
+        orderBy: { timestamp: 'desc' }
+      });
+
+      // Get today's summary
+      const nowT = new Date();
+      const todayTStr = `${nowT.getFullYear()}-${String(nowT.getMonth() + 1).padStart(2, '0')}-${String(nowT.getDate()).padStart(2, '0')}`;
+      const todayT = new Date(todayTStr + 'T00:00:00.000Z');
+      const nextDayT = new Date(todayT);
+      nextDayT.setUTCDate(nextDayT.getUTCDate() + 1);
+
+      const summary = await prisma.dailyRouteSummary.findFirst({
+        where: { userId: sm.id, date: { gte: todayT, lt: nextDayT } }
+      });
+
+      // Get today's visits count
+      const visitsCount = await prisma.customerVisit.count({
+        where: { userId: sm.id, visitDate: { gte: todayT, lt: nextDayT } }
+      });
+
+      // Calculate total hours
+      let totalHours = 0;
+      if (summary?.startTime) {
+        const start = new Date(summary.startTime);
+        const end = summary.endTime ? new Date(summary.endTime) : new Date();
+        totalHours = (end - start) / (1000 * 60 * 60);
+      }
+
+      liveData.push({
+        salesman: sm,
+        lastLocation,
+        lastSeen: lastLocation?.timestamp || null,
+        isOnline: lastLocation && (new Date() - new Date(lastLocation.timestamp)) < 15 * 60 * 1000, // Active in last 15 mins
+        todayStats: {
+          customersVisited: visitsCount,
+          distanceKm: summary?.totalDistanceKm || 0,
+          startTime: summary?.startTime,
+          endTime: summary?.endTime,
+          totalHours: Math.round(totalHours * 100) / 100,
+          productiveHours: Math.round((summary?.productiveHours || 0) * 100) / 100
+        }
+      });
+    }
+
+    res.json(liveData);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Customer Visit - Check In
+app.post('/api/gps/visit/check-in', authMiddleware, async (req, res) => {
+  try {
+    const { customerId, customerName, latitude, longitude, address, photo, visitPurpose } = req.body;
+
+    // Validate required fields
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: 'Location coordinates are required' });
+    }
+
+    // Use date string to avoid timezone issues with MySQL DATE type
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const today = new Date(todayStr + 'T00:00:00.000Z');
+
+    // Ensure customerId is null if empty string
+    const validCustomerId = customerId && customerId.trim() !== '' ? customerId : null;
+
+    // Calculate distance from customer's registered location if exists
+    let distanceFromCustomer = null;
+    if (validCustomerId) {
+      const customerLoc = await prisma.customerLocation.findUnique({
+        where: { customerId: validCustomerId }
+      });
+      if (customerLoc) {
+        distanceFromCustomer = calculateDistance(latitude, longitude, customerLoc.latitude, customerLoc.longitude);
+      }
+    }
+
+    const visit = await prisma.customerVisit.create({
+      data: {
+        userId: req.user.id,
+        customerId: validCustomerId,
+        customerName: customerName || null,
+        checkInTime: new Date(),
+        checkInLat: parseFloat(latitude),
+        checkInLng: parseFloat(longitude),
+        checkInAddress: address || null,
+        checkInPhoto: photo || null,
+        visitPurpose: visitPurpose || null,
+        distanceFromCustomer,
+        visitDate: today
+      },
+      include: { customer: true }
+    });
+
+    // Update daily summary - handle upsert manually due to composite key
+    try {
+      // Use date range for finding existing summary
+      const nextDay = new Date(today);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+
+      const existingSummary = await prisma.dailyRouteSummary.findFirst({
+        where: {
+          userId: req.user.id,
+          date: {
+            gte: today,
+            lt: nextDay
+          }
+        }
+      });
+
+      if (existingSummary) {
+        await prisma.dailyRouteSummary.update({
+          where: { id: existingSummary.id },
+          data: { totalCustomersVisited: { increment: 1 } }
+        });
+      } else {
+        await prisma.dailyRouteSummary.create({
+          data: { userId: req.user.id, date: today, totalCustomersVisited: 1 }
+        });
+      }
+    } catch (summaryError) {
+      console.error('Summary update error (non-critical):', summaryError.message);
+    }
+
+    res.json(visit);
+  } catch (error) {
+    console.error('Check-in error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Customer Visit - Check Out
+app.put('/api/gps/visit/:visitId/check-out', authMiddleware, async (req, res) => {
+  try {
+    const { visitId } = req.params;
+    const { latitude, longitude, address, outcome, notes, orderId, saleId, amountCollected } = req.body;
+
+    const visit = await prisma.customerVisit.findUnique({ where: { id: visitId } });
+    if (!visit) return res.status(404).json({ error: 'Visit not found' });
+
+    // Calculate duration
+    const checkOutTime = new Date();
+    const durationMinutes = Math.round((checkOutTime - new Date(visit.checkInTime)) / (1000 * 60));
+
+    const updatedVisit = await prisma.customerVisit.update({
+      where: { id: visitId },
+      data: {
+        checkOutTime,
+        checkOutLat: latitude,
+        checkOutLng: longitude,
+        checkOutAddress: address,
+        durationMinutes,
+        outcome,
+        notes,
+        orderId,
+        saleId,
+        amountCollected
+      },
+      include: { customer: true }
+    });
+
+    // Update daily summary with collection and productive hours
+    const nowCO = new Date();
+    const todayCOStr = `${nowCO.getFullYear()}-${String(nowCO.getMonth() + 1).padStart(2, '0')}-${String(nowCO.getDate()).padStart(2, '0')}`;
+    const todayCO = new Date(todayCOStr + 'T00:00:00.000Z');
+    const nextDayCO = new Date(todayCO);
+    nextDayCO.setUTCDate(nextDayCO.getUTCDate() + 1);
+    const smry = await prisma.dailyRouteSummary.findFirst({
+      where: { userId: req.user.id, date: { gte: todayCO, lt: nextDayCO } }
+    });
+    if (smry) {
+      const updateData = {
+        endTime: new Date(),
+        productiveHours: { increment: durationMinutes / 60 },
+        ...(amountCollected > 0 ? { totalAmountCollected: { increment: amountCollected } } : {})
+      };
+      await prisma.dailyRouteSummary.update({
+        where: { id: smry.id },
+        data: updateData
+      });
+    }
+
+    if (outcome === 'order_placed') {
+      const nowOrd = new Date();
+      const todayOrdStr = `${nowOrd.getFullYear()}-${String(nowOrd.getMonth() + 1).padStart(2, '0')}-${String(nowOrd.getDate()).padStart(2, '0')}`;
+      const todayOrd = new Date(todayOrdStr + 'T00:00:00.000Z');
+      const nextDayOrd = new Date(todayOrd);
+      nextDayOrd.setUTCDate(nextDayOrd.getUTCDate() + 1);
+      const smryOrd = await prisma.dailyRouteSummary.findFirst({
+        where: { userId: req.user.id, date: { gte: todayOrd, lt: nextDayOrd } }
+      });
+      if (smryOrd) {
+        await prisma.dailyRouteSummary.update({
+          where: { id: smryOrd.id },
+          data: { totalOrdersTaken: { increment: 1 } }
+        });
+      }
+    }
+
+    res.json(updatedVisit);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get salesman's visits for a day
+app.get('/api/gps/visits/:userId', authMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { date } = req.query;
+
+    if (req.user.role !== 'stock_manager' && req.user.id !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Parse date string to avoid timezone issues
+    let targetDateStr;
+    if (date) {
+      // date comes in format 'yyyy-MM-dd'
+      targetDateStr = date;
+    } else {
+      const now = new Date();
+      targetDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    // Create date object from string in UTC to match stored format
+    const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
+
+    // Query using date range to handle any timezone edge cases
+    const nextDay = new Date(targetDate);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+
+    const visits = await prisma.customerVisit.findMany({
+      where: {
+        userId,
+        visitDate: {
+          gte: targetDate,
+          lt: nextDay
+        }
+      },
+      include: { customer: true },
+      orderBy: { checkInTime: 'asc' }
+    });
+
+    res.json(visits);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get daily route summary
+app.get('/api/gps/summary/:userId', authMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    if (req.user.role !== 'stock_manager' && req.user.id !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const where = { userId };
+    if (startDate && endDate) {
+      // Parse dates properly to handle timezone
+      const start = new Date(startDate + 'T00:00:00.000Z');
+      const end = new Date(endDate + 'T00:00:00.000Z');
+      end.setUTCDate(end.getUTCDate() + 1); // Include the end date
+      where.date = { gte: start, lt: end };
+    }
+
+    const summaries = await prisma.dailyRouteSummary.findMany({
+      where,
+      orderBy: { date: 'desc' }
+    });
+
+    res.json(summaries);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Save/Update customer location for geofencing
+app.post('/api/gps/customer-location', authMiddleware, async (req, res) => {
+  try {
+    const { customerId, latitude, longitude, address, geofenceRadius } = req.body;
+
+    const location = await prisma.customerLocation.upsert({
+      where: { customerId },
+      create: { customerId, latitude, longitude, address, geofenceRadius: geofenceRadius || 100 },
+      update: { latitude, longitude, address, geofenceRadius: geofenceRadius || 100 }
+    });
+
+    res.json(location);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get customer location
+app.get('/api/gps/customer-location/:customerId', authMiddleware, async (req, res) => {
+  try {
+    const location = await prisma.customerLocation.findUnique({
+      where: { customerId: req.params.customerId },
+      include: { customer: true }
+    });
+    res.json(location);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Get all customer locations for map
+app.get('/api/gps/customer-locations', authMiddleware, async (req, res) => {
+  try {
+    const locations = await prisma.customerLocation.findMany({
+      include: { customer: { select: { id: true, name: true, phone: true, address: true } } }
+    });
+    res.json(locations);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Update distance traveled (called when significant movement detected)
+app.post('/api/gps/update-distance', authMiddleware, async (req, res) => {
+  try {
+    const { distanceKm } = req.body;
+    const nowD = new Date();
+    const todayDStr = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+    const todayD = new Date(todayDStr + 'T00:00:00.000Z');
+    const nextDayD = new Date(todayD);
+    nextDayD.setUTCDate(nextDayD.getUTCDate() + 1);
+
+    const existingSummary = await prisma.dailyRouteSummary.findFirst({
+      where: { userId: req.user.id, date: { gte: todayD, lt: nextDayD } }
+    });
+
+    if (existingSummary) {
+      await prisma.dailyRouteSummary.update({
+        where: { id: existingSummary.id },
+        data: { totalDistanceKm: { increment: distanceKm } }
+      });
+    } else {
+      await prisma.dailyRouteSummary.create({
+        data: { userId: req.user.id, date: todayD, totalDistanceKm: distanceKm }
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// Helper function to calculate distance between two GPS points (Haversine formula)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c * 1000; // Return distance in meters
+}
 
 // Start server
 app.listen(PORT, () => {

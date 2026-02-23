@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, ShoppingBag, Eye, MapPin } from 'lucide-react';
+import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, ShoppingBag, Eye, MapPin, Edit2, Download, Share2 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
 import { ordersApi } from '../../services/api';
 import type { OrderItem, Order } from '../../types';
@@ -32,22 +34,16 @@ export function MyOrders() {
   const [discount, setDiscount] = useState(0);
   const [cgstRate, setCgstRate] = useState(2.5);
   const [sgstRate, setSgstRate] = useState(2.5);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'upi' | 'credit'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'upi' | 'credit' | 'check'>('cash');
   const [amountPaid, setAmountPaid] = useState(0);
 
   // Delivery Details
-  const [deliveryNote, setDeliveryNote] = useState('');
   const [modeOfPayment, setModeOfPayment] = useState('');
-  const [referenceNo, setReferenceNo] = useState('');
-  const [otherReferences, setOtherReferences] = useState('');
-  const [buyersOrderNo, setBuyersOrderNo] = useState('');
-  const [buyersOrderDate, setBuyersOrderDate] = useState('');
-  const [dispatchDocNo, setDispatchDocNo] = useState('');
-  const [deliveryNoteDate, setDeliveryNoteDate] = useState('');
-  const [dispatchedThrough, setDispatchedThrough] = useState('');
   const [destination, setDestination] = useState('');
-  const [poNumber, setPoNumber] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
+  const [checkNumber, setCheckNumber] = useState('');
+  const [checkPhotoName, setCheckPhotoName] = useState('');
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const [orderLocation, setOrderLocation] = useState('');
   const [orderCoords, setOrderCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -150,6 +146,14 @@ export function MyOrders() {
     ));
   };
 
+  const updateCartItem = (productId: string, patch: Partial<OrderItem>) => {
+    setCart(cart.map((item) => {
+      if (item.productId !== productId) return item;
+      const next = { ...item, ...patch };
+      return { ...next, total: next.quantity * next.price };
+    }));
+  };
+
   const removeFromCart = (productId: string) => {
     setCart(cart.filter(item => item.productId !== productId));
   };
@@ -192,6 +196,10 @@ export function MyOrders() {
       alert('Please add items to cart');
       return;
     }
+    if (paymentMethod === 'check' && !checkPhotoName) {
+      alert('Check photo is compulsory for check payment.');
+      return;
+    }
 
     try {
       // Calculate balance due and payment status
@@ -203,7 +211,7 @@ export function MyOrders() {
         paymentStatus = 'partial';
       }
 
-      const order = await ordersApi.create({
+      const payload = {
         salesmanId: currentUser?.id || '',
         branchId,
         customerName: customerName.trim(),
@@ -220,25 +228,22 @@ export function MyOrders() {
         paymentStatus,
         cgstRate,
         sgstRate,
-        paymentMethod,
-        deliveryNote,
-        modeOfPayment,
-        referenceNo,
-        otherReferences,
-        buyersOrderNo,
-        buyersOrderDate,
-        dispatchDocNo,
-        deliveryNoteDate,
-        dispatchedThrough,
+        paymentMethod: paymentMethod === 'check' ? 'credit' : paymentMethod,
+        modeOfPayment: paymentMethod === 'check'
+          ? `${modeOfPayment || 'Check'}${checkNumber ? ` (No: ${checkNumber})` : ''}${checkPhotoName ? ` [Photo: ${checkPhotoName}]` : ''}`
+          : modeOfPayment,
         destination,
-        poNumber,
         vehicleNo,
         orderLocation: orderLocation || undefined,
         orderDate: new Date()
-      });
+      };
+      const order = editingOrderId
+        ? await ordersApi.update(editingOrderId, payload)
+        : await ordersApi.create(payload);
 
       setCreatedOrder(order);
       setOrderSubmitted(true);
+      setEditingOrderId(null);
       fetchOrders();
     } catch (error: any) {
       alert(error.message || 'Failed to create order');
@@ -247,6 +252,37 @@ export function MyOrders() {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPDF = async () => {
+    const element = invoiceRef.current;
+    if (!element || !createdOrder) return;
+    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    if (imgHeight <= pageHeight) {
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+    } else {
+      let y = 0;
+      while (y < imgHeight) {
+        pdf.addImage(imgData, 'PNG', 0, -y, imgWidth, imgHeight);
+        y += pageHeight;
+        if (y < imgHeight) pdf.addPage();
+      }
+    }
+    pdf.save(`Order-${createdOrder.orderNumber}.pdf`);
+  };
+
+  const handleShareWhatsApp = async () => {
+    if (!createdOrder) return;
+    const text = encodeURIComponent(`Purchase Invoice ${createdOrder.orderNumber}\nCustomer: ${createdOrder.customerName}\nAmount: ₹${createdOrder.finalAmount.toLocaleString()}`);
+    const phone = (createdOrder.customerPhone || '').replace(/\D/g, '');
+    const waUrl = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+    window.open(waUrl, '_blank');
   };
 
   const handleNewOrder = () => {
@@ -261,20 +297,47 @@ export function MyOrders() {
     setSgstRate(2.5);
     setPaymentMethod('cash');
     setAmountPaid(0);
-    setDeliveryNote('');
     setModeOfPayment('');
-    setReferenceNo('');
-    setOtherReferences('');
-    setBuyersOrderNo('');
-    setBuyersOrderDate('');
-    setDispatchDocNo('');
-    setDeliveryNoteDate('');
-    setDispatchedThrough('');
     setDestination('');
-    setPoNumber('');
     setVehicleNo('');
+    setCheckNumber('');
+    setCheckPhotoName('');
+    setEditingOrderId(null);
     setOrderSubmitted(false);
     setCreatedOrder(null);
+  };
+
+  const handleEditOrder = (order: Order) => {
+    if (order.orderStatus !== 'pending') {
+      alert('Only pending orders can be edited');
+      return;
+    }
+    setEditingOrderId(order.id);
+    setActiveTab('create');
+    setCustomerName(order.customerName);
+    setCustomerPhone(order.customerPhone || '');
+    setCustomerEmail(order.customerEmail || '');
+    setCustomerAddress(order.customerAddress || '');
+    setCustomerGSTIN(order.customerGSTIN || '');
+    setDiscount(order.discount || 0);
+    setCgstRate(order.cgstRate || 2.5);
+    setSgstRate(order.sgstRate || 2.5);
+    setPaymentMethod(order.paymentMethod as typeof paymentMethod);
+    setAmountPaid(order.amountPaid || 0);
+    setModeOfPayment(order.modeOfPayment || '');
+    setDestination(order.destination || '');
+    setVehicleNo(order.vehicleNo || '');
+    setCart(order.items.map((i) => ({ ...i })));
+  };
+
+  const handleDeleteOrder = async (order: Order) => {
+    if (!window.confirm(`Delete ${order.orderNumber}?`)) return;
+    try {
+      await ordersApi.delete(order.id);
+      await fetchOrders();
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete order');
+    }
   };
 
   const filteredProducts = products.filter(product =>
@@ -328,6 +391,18 @@ export function MyOrders() {
                 Print Invoice
               </button>
             )}
+            {(isPending || isConverted) && (
+              <>
+                <button className="btn btn-secondary" onClick={handleDownloadPDF}>
+                  <Download size={18} />
+                  Download PDF
+                </button>
+                <button className="btn btn-success" onClick={handleShareWhatsApp} style={{ background: '#25D366', borderColor: '#25D366' }}>
+                  <Share2 size={18} />
+                  WhatsApp
+                </button>
+              </>
+            )}
             <button className="btn btn-success" onClick={handleNewOrder}>
               <Plus size={18} />
               New Order
@@ -353,6 +428,10 @@ export function MyOrders() {
             <button className="btn btn-primary" onClick={handlePrint}>
               <Printer size={18} />
               Print Invoice
+            </button>
+            <button className="btn btn-secondary" onClick={handleDownloadPDF}>
+              <Download size={18} />
+              Download PDF
             </button>
             <button className="btn btn-secondary" onClick={() => { setShowOrderDetail(false); setSelectedOrder(null); }}>
               Back to List
@@ -447,13 +526,33 @@ export function MyOrders() {
                       <td>{getStatusBadge(order.orderStatus)}</td>
                       <td>{format(new Date(order.orderDate), 'dd MMM yyyy')}</td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-primary"
-                          onClick={() => { setSelectedOrder(order); setShowOrderDetail(true); }}
-                        >
-                          <Eye size={14} />
-                          View
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => { setSelectedOrder(order); setCreatedOrder(order); setShowOrderDetail(true); }}
+                          >
+                            <Eye size={14} />
+                            View
+                          </button>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleEditOrder(order)}
+                            disabled={order.orderStatus !== 'pending'}
+                            title={order.orderStatus !== 'pending' ? 'Only pending order can be edited' : 'Edit'}
+                          >
+                            <Edit2 size={14} />
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => handleDeleteOrder(order)}
+                            disabled={order.orderStatus !== 'pending'}
+                            title={order.orderStatus !== 'pending' ? 'Only pending order can be deleted' : 'Delete'}
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -718,110 +817,12 @@ export function MyOrders() {
 
                 <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Delivery Note</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={deliveryNote}
-                      onChange={(e) => setDeliveryNote(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
                     <label className="form-label" style={{ fontSize: '12px' }}>Mode/Terms of Payment *</label>
                     <input
                       type="text"
                       className="form-input"
                       value={modeOfPayment}
                       onChange={(e) => setModeOfPayment(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Reference No. & Date</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={referenceNo}
-                      onChange={(e) => setReferenceNo(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Other References</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={otherReferences}
-                      onChange={(e) => setOtherReferences(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Buyer's Order No.</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={buyersOrderNo}
-                      onChange={(e) => setBuyersOrderNo(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Dated</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      value={buyersOrderDate}
-                      onChange={(e) => setBuyersOrderDate(e.target.value)}
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Dispatch Doc No.</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={dispatchDocNo}
-                      onChange={(e) => setDispatchDocNo(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Delivery Note Date</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      value={deliveryNoteDate}
-                      onChange={(e) => setDeliveryNoteDate(e.target.value)}
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Dispatched through</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={dispatchedThrough}
-                      onChange={(e) => setDispatchedThrough(e.target.value)}
                       placeholder=""
                       style={{ padding: '6px 10px', fontSize: '13px' }}
                     />
@@ -840,17 +841,6 @@ export function MyOrders() {
                 </div>
 
                 <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>PO Number</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={poNumber}
-                      onChange={(e) => setPoNumber(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
                   <div className="form-group" style={{ marginBottom: '8px' }}>
                     <label className="form-label" style={{ fontSize: '12px' }}>Vehicle No. *</label>
                     <input
@@ -879,11 +869,14 @@ export function MyOrders() {
                           </span>
                         )}
                       </div>
-                      <div className="cart-item-details">
-                        {item.quantity} x ₹{item.price}
+                      <div className="cart-item-details" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))', gap: '6px', marginTop: '6px' }}>
+                        <input type="number" className="form-input" value={item.price} min="0" step="0.01" onChange={(e) => updateCartItem(item.productId, { price: parseFloat(e.target.value) || 0 })} placeholder="Rate" />
+                        <input type="text" className="form-input" value={item.batchNo || ''} onChange={(e) => updateCartItem(item.productId, { batchNo: e.target.value })} placeholder="Batch No" />
+                        <input type="date" className="form-input" value={item.mfgDate || ''} onChange={(e) => updateCartItem(item.productId, { mfgDate: e.target.value })} placeholder="MFG Date" />
+                        <input type="date" className="form-input" value={item.expDate || ''} onChange={(e) => updateCartItem(item.productId, { expDate: e.target.value })} placeholder="EXP Date" />
                       </div>
                     </div>
-                    <span className="cart-item-total">₹{item.total}</span>
+                    <span className="cart-item-total">₹{(item.quantity * item.price).toFixed(2)}</span>
                     <button
                       className="cart-item-remove"
                       onClick={() => removeFromCart(item.productId)}
@@ -934,8 +927,24 @@ export function MyOrders() {
                 <option value="card">Card</option>
                 <option value="upi">UPI</option>
                 <option value="credit">Credit</option>
+                <option value="check">Check</option>
               </select>
             </div>
+            {paymentMethod === 'check' && (
+              <div style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Check Number</label>
+                    <input className="form-input" value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Check Photo (Compulsory)</label>
+                    <input type="file" accept="image/*" capture="environment" onChange={(e) => setCheckPhotoName(e.target.files?.[0]?.name || '')} />
+                    {checkPhotoName && <div style={{ fontSize: 12, marginTop: 4 }}>{checkPhotoName}</div>}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Amount Received Section */}
             <div style={{ marginTop: '16px', padding: '12px', background: '#fff8e1', borderRadius: '8px', border: '1px solid #ffecb3' }}>
@@ -998,10 +1007,10 @@ export function MyOrders() {
             <button
               className="btn btn-success btn-block btn-lg"
               onClick={handleCreateOrder}
-              disabled={cart.length === 0 || !customerName.trim() || !customerPhone.trim() || !customerGSTIN.trim() || !modeOfPayment.trim() || !destination.trim() || !vehicleNo.trim()}
+              disabled={cart.length === 0 || !customerName.trim() || !customerPhone.trim() || !customerGSTIN.trim() || !modeOfPayment.trim() || !destination.trim() || !vehicleNo.trim() || (paymentMethod === 'check' && !checkPhotoName)}
             >
               <Send size={20} />
-              Generate Purchase Invoice
+              {editingOrderId ? 'Update Purchase Invoice' : 'Generate Purchase Invoice'}
             </button>
           </div>
         </div>

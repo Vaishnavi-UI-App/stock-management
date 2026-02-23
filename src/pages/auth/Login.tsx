@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, Mail, Lock, ArrowRight } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import './Login.css';
 
@@ -34,80 +34,102 @@ export function Login() {
 
   return (
     <div className="login-page">
-      <div className="login-container">
-        <div className="login-header">
-          <div className="login-logo">
-            <Package size={48} />
+      {/* Left side - branding */}
+      <div className="login-brand">
+        <div className="login-brand-content">
+          <img src="/logo.png" alt="DynamicInventory" className="login-brand-logo" />
+          <h1 className="login-brand-title">DynamicInventory</h1>
+          <p className="login-brand-subtitle">ERP Stock Management System</p>
+          <div className="login-brand-features">
+            <div className="login-feature">
+              <div className="login-feature-dot"></div>
+              <span>Real-time inventory tracking</span>
+            </div>
+            <div className="login-feature">
+              <div className="login-feature-dot"></div>
+              <span>Multi-branch management</span>
+            </div>
+            <div className="login-feature">
+              <div className="login-feature-dot"></div>
+              <span>Sales & performance analytics</span>
+            </div>
+            <div className="login-feature">
+              <div className="login-feature-dot"></div>
+              <span>Employee & payroll management</span>
+            </div>
           </div>
-          <h1>DynamicCrop ERP</h1>
-          <p>DynamicCrop ERP System</p>
         </div>
+        <div className="login-brand-bg"></div>
+      </div>
 
-        <form className="login-form" onSubmit={handleSubmit}>
-          {error && (
-            <div className="alert alert-danger">
-              <AlertCircle size={18} />
-              {error}
-            </div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label">Email Address</label>
-            <input
-              type="email"
-              className="form-input"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+      {/* Right side - form */}
+      <div className="login-form-side">
+        <div className="login-form-container">
+          <div className="login-form-header">
+            <h2>Welcome back</h2>
+            <p>Enter your credentials to access your account</p>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <div className="password-input-wrapper">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className="form-input"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-          </div>
+          <form className="login-form" onSubmit={handleSubmit}>
+            {error && (
+              <div className="login-alert">
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
+            )}
 
-          <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+            <div className="login-field">
+              <label>Email Address</label>
+              <div className="login-input-wrapper">
+                <Mail size={18} className="login-input-icon" />
+                <input
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+            </div>
 
-        <div className="login-demo">
-          <h4>Demo Credentials</h4>
-          <div className="demo-credentials">
-            <div className="demo-item">
-              <span className="demo-role">Stock Manager</span>
-              <span className="demo-email">manager@stock.com</span>
-              <span className="demo-pass">password123</span>
+            <div className="login-field">
+              <label>Password</label>
+              <div className="login-input-wrapper">
+                <Lock size={18} className="login-input-icon" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="login-password-toggle"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
-            <div className="demo-item">
-              <span className="demo-role">Branch Manager</span>
-              <span className="demo-email">pune@branch.com</span>
-              <span className="demo-pass">password123</span>
-            </div>
-            <div className="demo-item">
-              <span className="demo-role">Salesman</span>
-              <span className="demo-email">rajesh@sales.com</span>
-              <span className="demo-pass">password123</span>
-            </div>
-          </div>
+
+            <button type="submit" className="login-submit" disabled={loading}>
+              {loading ? (
+                <div className="login-spinner"></div>
+              ) : (
+                <>
+                  Sign In
+                  <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className="login-footer-text">
+            Contact your administrator if you don't have login credentials
+          </p>
         </div>
       </div>
     </div>

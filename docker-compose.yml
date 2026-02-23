@@ -1,47 +1,55 @@
-version: "3.8"
-
 services:
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=/api
+    container_name: dynamicinventory
     ports:
-      - "80:80"
+      - "8083:80"
     depends_on:
       - backend
     restart: always
+    networks:
+      - dynamic-net
 
   backend:
     build:
       context: ./server
       dockerfile: Dockerfile
+    container_name: dynamic-backend
     ports:
-      - "3001:3001"
+      - "3101:3001"
     environment:
-      - DATABASE_URL=mysql://root:vaishnavi%401911@database:3306/stock_management
-      - JWT_SECRET=your-super-secret-jwt-key-change-this
+      - DATABASE_URL=mysql://root:${MYSQL_ROOT_PASSWORD}@database:3306/${MYSQL_DATABASE}
+      - JWT_SECRET=${JWT_SECRET}
       - PORT=3001
       - NODE_ENV=production
     depends_on:
       database:
         condition: service_healthy
     restart: always
+    networks:
+      - dynamic-net
 
   database:
     image: mysql:8.0
-    ports:
-      - "3306:3306"
+    container_name: dynamic-mysql
     environment:
-      - MYSQL_ROOT_PASSWORD=vaishnavi@1911
-      - MYSQL_DATABASE=stock_management
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
     volumes:
-      - mysql_data:/var/lib/mysql
+      - /var/lib/dynamic-mysql:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: always
+    networks:
+      - dynamic-net
 
-volumes:
-  mysql_data:
+networks:
+  dynamic-net:
+    driver: bridge

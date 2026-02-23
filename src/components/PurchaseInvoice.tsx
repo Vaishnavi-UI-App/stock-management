@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Order } from '../types';
 import { useStore } from '../store/useStore';
+import logoImg from '/logo.png';
 import './TaxInvoice.css';
 
 interface PurchaseInvoiceProps {
@@ -94,17 +95,8 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
 
   // Merge delivery details from order
   const deliveryDetails = {
-    deliveryNote: order.deliveryNote || '',
-    referenceNo: order.referenceNo || '',
-    buyersOrderNo: order.buyersOrderNo || '',
-    buyersOrderDate: order.buyersOrderDate || '',
-    dispatchDocNo: order.dispatchDocNo || '',
-    dispatchedThrough: order.dispatchedThrough || '',
     paymentTerms: order.modeOfPayment || '',
-    otherReferences: order.otherReferences || '',
-    deliveryNoteDate: order.deliveryNoteDate || '',
     destination: order.destination || '',
-    poNumber: order.poNumber || '',
     vehicleNo: order.vehicleNo || ''
   };
 
@@ -152,7 +144,10 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
     <div className="tax-invoice" ref={ref}>
       {/* Header */}
       <div className="invoice-header-title">
-        <h2>{invoiceTitle}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <img src={logoImg} alt="Dynamic Crop Science" crossOrigin="anonymous" style={{ height: 32, objectFit: 'contain' }} />
+          <h2 style={{ margin: 0 }}>{invoiceTitle}</h2>
+        </div>
         {!isConverted && statusText && (
           <div style={{
             fontSize: '12px',
@@ -214,38 +209,12 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
                 <td className="detail-value">{invoiceDate}</td>
               </tr>
               <tr>
-                <td className="detail-label">Delivery Note</td>
-                <td className="detail-value">{deliveryDetails.deliveryNote}</td>
                 <td className="detail-label">Mode/Terms of Payment</td>
                 <td className="detail-value">{deliveryDetails.paymentTerms}</td>
               </tr>
               <tr>
-                <td className="detail-label">Reference No. & Date.</td>
-                <td className="detail-value">{deliveryDetails.referenceNo}</td>
-                <td className="detail-label">Other References</td>
-                <td className="detail-value">{deliveryDetails.otherReferences}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Buyer's Order No.</td>
-                <td className="detail-value">{deliveryDetails.buyersOrderNo}</td>
-                <td className="detail-label">Dated</td>
-                <td className="detail-value">{deliveryDetails.buyersOrderDate}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Dispatch Doc No.</td>
-                <td className="detail-value">{deliveryDetails.dispatchDocNo}</td>
-                <td className="detail-label">Delivery Note Date</td>
-                <td className="detail-value">{deliveryDetails.deliveryNoteDate}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Dispatched through</td>
-                <td className="detail-value">{deliveryDetails.dispatchedThrough}</td>
                 <td className="detail-label">Destination</td>
                 <td className="detail-value">{deliveryDetails.destination}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">PO Number</td>
-                <td className="detail-value">{deliveryDetails.poNumber}</td>
                 <td className="detail-label">Vehicle No.</td>
                 <td className="detail-value">{deliveryDetails.vehicleNo}</td>
               </tr>
@@ -295,20 +264,6 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
                 </tr>
               );
             })}
-            {/* Empty rows to maintain format */}
-            {Array.from({ length: Math.max(0, 5 - order.items.length) }).map((_, i) => (
-              <tr key={`empty-${i}`} className="empty-row">
-                <td className="col-sno">&nbsp;</td>
-                <td className="col-item"></td>
-                <td className="col-hsn"></td>
-                <td className="col-batch"></td>
-                <td className="col-exp"></td>
-                <td className="col-mfg"></td>
-                <td className="col-qty"></td>
-                <td className="col-rate"></td>
-                <td className="col-amount"></td>
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>

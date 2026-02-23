@@ -135,6 +135,7 @@ export const useStore = create<AppState>()(
 
       logout: () => {
         localStorage.removeItem('token');
+        localStorage.removeItem('gps-tracking-state');
         set({
           currentUser: null,
           token: null,

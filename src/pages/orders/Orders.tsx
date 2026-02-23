@@ -10,7 +10,8 @@ import { format } from 'date-fns';
 import '../sales/Sales.css';
 
 export function Orders() {
-  const { getUserById, getBranchById } = useStore();
+  const { getUserById, getBranchById, currentUser } = useStore();
+  const isBranchManager = currentUser?.role === 'branch_manager';
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -29,7 +30,11 @@ export function Orders() {
   const fetchOrders = async () => {
     setIsLoading(true);
     try {
-      const data = await ordersApi.getAll();
+      const filters: { branchId?: string } = {};
+      if (isBranchManager && currentUser?.branchId) {
+        filters.branchId = currentUser.branchId;
+      }
+      const data = await ordersApi.getAll(filters);
       setOrders(data);
     } catch (error) {
       console.error('Failed to fetch orders:', error);

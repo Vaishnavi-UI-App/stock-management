@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Package,
   Building2,
@@ -9,12 +9,23 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Wallet,
-  AlertTriangle
+  AlertTriangle,
+  Sun,
+  Moon,
+  Sunrise
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { paymentsApi } from '../../services/api';
 import { format } from 'date-fns';
+import { useLanguage } from '../../i18n/useLanguage';
 import './Dashboard.css';
+
+function getGreeting(): { text: string; icon: typeof Sun } {
+  const hour = new Date().getHours();
+  if (hour < 12) return { text: 'Good Morning', icon: Sunrise };
+  if (hour < 17) return { text: 'Good Afternoon', icon: Sun };
+  return { text: 'Good Evening', icon: Moon };
+}
 
 export function Dashboard() {
   const {
@@ -30,8 +41,10 @@ export function Dashboard() {
     getBranchById,
     getUserById
   } = useStore();
+  const { t } = useLanguage();
 
   const role = currentUser?.role;
+  const greeting = useMemo(() => getGreeting(), []);
 
   // Payment summary state for admin
   const [paymentSummary, setPaymentSummary] = useState({
@@ -162,28 +175,28 @@ export function Dashboard() {
 
       return [
         {
-          label: 'Products with Me',
+          label: t.productsWithMe,
           value: myStock.length,
           icon: Package,
           color: '#2563eb',
           bgColor: 'rgba(37, 99, 235, 0.1)',
         },
         {
-          label: 'Total Items',
+          label: t.totalItems,
           value: totalItems,
           icon: Package,
           color: '#8b5cf6',
           bgColor: 'rgba(139, 92, 246, 0.1)',
         },
         {
-          label: 'Total Sales',
+          label: t.totalSales,
           value: `₹${totalSalesAmount.toLocaleString()}`,
           icon: IndianRupee,
           color: '#22c55e',
           bgColor: 'rgba(34, 197, 94, 0.1)',
         },
         {
-          label: 'This Month',
+          label: t.thisMonth,
           value: `₹${thisMonthAmount.toLocaleString()}`,
           icon: TrendingUp,
           color: '#f59e0b',
@@ -239,12 +252,11 @@ export function Dashboard() {
   const stats = getStats();
   const recentSales = getRecentSales();
   const lowStockItems = getLowStockItems();
-
   return (
     <div className="dashboard">
       <div className="page-header">
-        <h1>Dashboard</h1>
-        <p>Welcome back, {currentUser?.name}!</p>
+        <h1>{greeting.text}, {currentUser?.name}!</h1>
+        <p>{t.dashboard} - {format(new Date(), 'EEEE, dd MMMM yyyy')}</p>
       </div>
 
       <div className="stats-grid">
@@ -265,7 +277,7 @@ export function Dashboard() {
       <div className="dashboard-grid">
         <div className="card recent-sales">
           <div className="card-header">
-            <h3>Recent Sales</h3>
+            <h3>{t.recentSales}</h3>
             <ShoppingCart size={20} />
           </div>
           {recentSales.length > 0 ? (
@@ -293,7 +305,7 @@ export function Dashboard() {
             </div>
           ) : (
             <div className="empty-state">
-              <p>No recent sales</p>
+              <p>{t.noRecentSales}</p>
             </div>
           )}
         </div>
@@ -329,7 +341,7 @@ export function Dashboard() {
         {role === 'salesman' && (
           <div className="card my-stock">
             <div className="card-header">
-              <h3>My Current Stock</h3>
+              <h3>{t.myCurrentStock}</h3>
               <Package size={20} />
             </div>
             {salesmanStock.filter(ss => ss.salesmanId === currentUser?.id).length > 0 ? (
@@ -342,7 +354,7 @@ export function Dashboard() {
                       <div className="stock-item" key={ss.id}>
                         <div className="stock-info">
                           <span className="stock-name">{product?.name}</span>
-                          <span className="stock-location">₹{product?.price} per {product?.unit}</span>
+                          <span className="stock-location">₹{product?.price} {t.perUnit} {product?.unit}</span>
                         </div>
                         <div className="stock-qty">
                           {ss.quantity} {product?.unit}
@@ -353,7 +365,7 @@ export function Dashboard() {
               </div>
             ) : (
               <div className="empty-state">
-                <p>No products with you. Take products from branch.</p>
+                <p>{t.noProductsWithYou}. {t.takeProductsFromBranch}.</p>
               </div>
             )}
           </div>

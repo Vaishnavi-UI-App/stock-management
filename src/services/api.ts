@@ -217,6 +217,9 @@ export const salesApi = {
       body: JSON.stringify(saleData),
     }),
 
+  delete: (id: string) =>
+    apiRequest<void>(`/sales/${id}`, { method: 'DELETE' }),
+
   getPendingSales: () => apiRequest<any[]>('/sales/pending/all'),
 
   approveSale: (id: string) =>
@@ -515,4 +518,330 @@ export const attendanceApi = {
     const query = params.toString();
     return apiRequest<any>(`/attendance/summary${query ? `?${query}` : ''}`);
   },
+};
+
+// ==================== NEW FEATURE APIS ====================
+
+// Feature 2: Sales Returns
+export const salesReturnsApi = {
+  getAll: () => apiRequest<any[]>('/sales-returns'),
+  create: (data: any) => apiRequest<any>('/sales-returns', { method: 'POST', body: JSON.stringify(data) }),
+  approve: (id: string) => apiRequest<any>(`/sales-returns/${id}/approve`, { method: 'PUT' }),
+  reject: (id: string) => apiRequest<any>(`/sales-returns/${id}/reject`, { method: 'PUT' }),
+};
+
+// Feature 3: Stock Alerts
+export const stockAlertsApi = {
+  getAlerts: () => apiRequest<any[]>('/stock-alerts'),
+  setReorderPoint: (productId: string, reorderPoint: number) =>
+    apiRequest<any>(`/products/${productId}/reorder-point`, { method: 'PUT', body: JSON.stringify({ reorderPoint }) }),
+};
+
+// Feature 4: Payroll
+export const payrollApi = {
+  generate: (month: number, year: number) =>
+    apiRequest<any[]>('/payroll/generate', { method: 'POST', body: JSON.stringify({ month, year }) }),
+};
+
+// Feature 6: Product Batches
+export const batchesApi = {
+  getAll: (daysToExpiry?: number) => {
+    const q = daysToExpiry ? `?daysToExpiry=${daysToExpiry}` : '';
+    return apiRequest<any[]>(`/product-batches${q}`);
+  },
+  create: (data: any) => apiRequest<any>('/product-batches', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// Feature 7: Salesman Performance
+export const performanceApi = {
+  getSalesmanPerformance: (month?: number, year?: number) => {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month.toString());
+    if (year) params.append('year', year.toString());
+    return apiRequest<any[]>(`/performance/salesman?${params.toString()}`);
+  },
+};
+
+// Feature 8: Suppliers & Purchases
+export const suppliersApi = {
+  getAll: () => apiRequest<any[]>('/suppliers'),
+  create: (data: any) => apiRequest<any>('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => apiRequest<any>(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => apiRequest<any>(`/suppliers/${id}`, { method: 'DELETE' }),
+};
+
+export const purchasesApi = {
+  getAll: () => apiRequest<any[]>('/purchases'),
+  create: (data: any) => apiRequest<any>('/purchases', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// Feature 10: Daily Collection
+export const dailyCollectionApi = {
+  getReport: (date?: string) => {
+    const q = date ? `?date=${date}` : '';
+    return apiRequest<any>(`/reports/daily-collection${q}`);
+  },
+};
+
+// Feature 12: Leave Management
+export const leavesApi = {
+  getAll: (status?: string) => {
+    const q = status ? `?status=${status}` : '';
+    return apiRequest<any[]>(`/leaves${q}`);
+  },
+  create: (data: any) => apiRequest<any>('/leaves', { method: 'POST', body: JSON.stringify(data) }),
+  approve: (id: string) => apiRequest<any>(`/leaves/${id}/approve`, { method: 'PUT' }),
+  reject: (id: string, reason: string) => apiRequest<any>(`/leaves/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) }),
+};
+
+// Feature 13: Damage Tracking
+export const damagesApi = {
+  getAll: () => apiRequest<any[]>('/damages'),
+  create: (data: any) => apiRequest<any>('/damages', { method: 'POST', body: JSON.stringify(data) }),
+  approve: (id: string) => apiRequest<any>(`/damages/${id}/approve`, { method: 'PUT' }),
+};
+
+// Feature 14: Credit Limit
+export const creditApi = {
+  setCreditLimit: (customerId: string, creditLimit: number) =>
+    apiRequest<any>(`/customers/${customerId}/credit-limit`, { method: 'PUT', body: JSON.stringify({ creditLimit }) }),
+  checkCredit: (customerId: string) => apiRequest<any>(`/customers/credit-check/${customerId}`),
+};
+
+// Feature 15: Audit Logs
+export const auditApi = {
+  getLogs: (filters?: { entity?: string; action?: string; userId?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.entity) params.append('entity', filters.entity);
+    if (filters?.action) params.append('action', filters.action);
+    if (filters?.userId) params.append('userId', filters.userId);
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    return apiRequest<any[]>(`/audit-logs?${params.toString()}`);
+  },
+};
+
+// ==================== GPS TRACKING API ====================
+
+export interface SalesmanLocation {
+  id: string;
+  userId: string;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  altitude?: number;
+  batteryLevel?: number;
+  address?: string;
+  timestamp: string;
+}
+
+export interface CustomerVisit {
+  id: string;
+  userId: string;
+  customerId?: string;
+  customerName?: string;
+  checkInTime: string;
+  checkInLat: number;
+  checkInLng: number;
+  checkInAddress?: string;
+  checkInPhoto?: string;
+  checkOutTime?: string;
+  checkOutLat?: number;
+  checkOutLng?: number;
+  checkOutAddress?: string;
+  durationMinutes?: number;
+  distanceFromCustomer?: number;
+  visitPurpose?: string;
+  outcome?: string;
+  notes?: string;
+  orderId?: string;
+  saleId?: string;
+  amountCollected?: number;
+  visitDate: string;
+  customer?: any;
+}
+
+export interface DailyRouteSummary {
+  id: string;
+  userId: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  totalDistanceKm: number;
+  totalCustomersPlanned: number;
+  totalCustomersVisited: number;
+  totalOrdersTaken: number;
+  totalAmountCollected: number;
+  productiveHours: number;
+  idleTimeMinutes: number;
+}
+
+export interface LiveTrackingData {
+  salesman: {
+    id: string;
+    name: string;
+    phone: string;
+    employeeCode?: string;
+    branch?: any;
+  };
+  lastLocation?: SalesmanLocation;
+  lastSeen?: string;
+  isOnline: boolean;
+  todayStats: {
+    customersVisited: number;
+    distanceKm: number;
+    startTime?: string;
+    endTime?: string;
+    totalHours?: number;
+    productiveHours?: number;
+  };
+}
+
+export const gpsApi = {
+  // Record current location
+  recordLocation: (data: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    speed?: number;
+    heading?: number;
+    altitude?: number;
+    batteryLevel?: number;
+    address?: string;
+  }) => apiRequest<SalesmanLocation>('/gps/location', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Get location history for a user
+  getLocationHistory: (userId: string, date?: string) => {
+    const q = date ? `?date=${date}` : '';
+    return apiRequest<SalesmanLocation[]>(`/gps/history/${userId}${q}`);
+  },
+
+  // Get live tracking data (admin)
+  getLiveTracking: () => apiRequest<LiveTrackingData[]>('/gps/live-tracking'),
+
+  // Customer Visit - Check In
+  visitCheckIn: (data: {
+    customerId?: string;
+    customerName?: string;
+    latitude: number;
+    longitude: number;
+    address?: string;
+    photo?: string;
+    visitPurpose?: string;
+  }) => apiRequest<CustomerVisit>('/gps/visit/check-in', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Customer Visit - Check Out
+  visitCheckOut: (visitId: string, data: {
+    latitude: number;
+    longitude: number;
+    address?: string;
+    outcome?: string;
+    notes?: string;
+    orderId?: string;
+    saleId?: string;
+    amountCollected?: number;
+  }) => apiRequest<CustomerVisit>(`/gps/visit/${visitId}/check-out`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+
+  // Get visits for a user
+  getVisits: (userId: string, date?: string) => {
+    const q = date ? `?date=${date}` : '';
+    return apiRequest<CustomerVisit[]>(`/gps/visits/${userId}${q}`);
+  },
+
+  // Get daily route summary
+  getRouteSummary: (userId: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    const q = params.toString();
+    return apiRequest<DailyRouteSummary[]>(`/gps/summary/${userId}${q ? `?${q}` : ''}`);
+  },
+
+  // Save customer location for geofencing
+  saveCustomerLocation: (data: {
+    customerId: string;
+    latitude: number;
+    longitude: number;
+    address?: string;
+    geofenceRadius?: number;
+  }) => apiRequest<any>('/gps/customer-location', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Get customer location
+  getCustomerLocation: (customerId: string) =>
+    apiRequest<any>(`/gps/customer-location/${customerId}`),
+
+  // Get all customer locations
+  getAllCustomerLocations: () =>
+    apiRequest<any[]>('/gps/customer-locations'),
+
+  // Update distance traveled
+  updateDistance: (distanceKm: number) =>
+    apiRequest<any>('/gps/update-distance', {
+      method: 'POST',
+      body: JSON.stringify({ distanceKm }),
+    }),
+};
+
+// ==================== STOCK UPDATE REQUESTS API ====================
+
+export const stockUpdateRequestsApi = {
+  getAll: (filters?: { status?: string; branchId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.branchId) params.append('branchId', filters.branchId);
+    const query = params.toString();
+    return apiRequest<any[]>(`/stock-update-requests${query ? `?${query}` : ''}`);
+  },
+
+  create: (data: {
+    branchId: string;
+    productId: string;
+    requestedQuantity: number;
+    requestType?: string;
+    reason?: string;
+  }) =>
+    apiRequest<any>('/stock-update-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  approve: (id: string) =>
+    apiRequest<any>(`/stock-update-requests/${id}/approve`, { method: 'PUT' }),
+
+  reject: (id: string, rejectionReason: string) =>
+    apiRequest<any>(`/stock-update-requests/${id}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ rejectionReason }),
+    }),
+};
+
+// ==================== NOTIFICATIONS API ====================
+
+export const notificationsApi = {
+  getAll: (unreadOnly?: boolean) => {
+    const q = unreadOnly ? '?unreadOnly=true' : '';
+    return apiRequest<any[]>(`/notifications${q}`);
+  },
+
+  markRead: (id: string) =>
+    apiRequest<any>(`/notifications/${id}/read`, { method: 'PUT' }),
+
+  markAllRead: () =>
+    apiRequest<any>('/notifications/read-all', { method: 'PUT' }),
+
+  getUnreadCount: () =>
+    apiRequest<{ count: number }>('/notifications/unread-count'),
 };

@@ -120,6 +120,16 @@ model User {
   orders         Order[]
   expenditures   Expenditure[]
   attendances    Attendance[]
+  leaveRequests  LeaveRequest[]
+  damageRecords  DamageRecord[]
+  auditLogs      AuditLog[]
+  // GPS Tracking relations
+  locations      SalesmanLocation[]
+  customerVisits CustomerVisit[]
+  routeSummaries DailyRouteSummary[]
+  // Stock update requests & notifications
+  stockRequests  StockUpdateRequest[] @relation("StockRequests")
+  notifications  Notification[]       @relation("UserNotifications")
 }
 
 enum UserRole {
@@ -146,6 +156,9 @@ model Branch {
   sales          Sale[]
   stockTransfers StockTransfer[]
   orders         Order[]
+  batches        ProductBatch[]
+  damageRecords  DamageRecord[]
+  stockUpdateRequests StockUpdateRequest[]
 }
 
 // Product model
@@ -159,17 +172,24 @@ model Product {
   unit        String
   caseQty     Int
   gstRate     Float
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  description   String?
+  expDate       DateTime?     // Product expiry date
+  reorderPoint  Int?          // Feature 3: Low stock alert threshold
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
-  companyStock   CompanyStock?
-  branchStocks   BranchStock[]
-  salesmanStocks SalesmanStock[]
-  saleItems      SaleItem[]
-  stockTransfers StockTransfer[]
-  orderItems     OrderItem[]
+  companyStock    CompanyStock?
+  branchStocks    BranchStock[]
+  salesmanStocks  SalesmanStock[]
+  saleItems       SaleItem[]
+  stockTransfers  StockTransfer[]
+  orderItems      OrderItem[]
+  returnItems     SalesReturnItem[]
+  batches         ProductBatch[]
+  purchaseItems   PurchaseItem[]
+  damageRecords   DamageRecord[]
+  stockUpdateRequests StockUpdateRequest[]
 }
 
 // Company Stock (Main warehouse)
@@ -252,6 +272,10 @@ model Customer {
   sales        Sale[]
   payments     Payment[]
   transactions CustomerTransaction[]
+  returns      SalesReturn[]
+  // GPS Tracking relations
+  visits       CustomerVisit[]
+  location     CustomerLocation?
 }
 
 // Payment model to track individual payments
@@ -352,6 +376,7 @@ model Sale {
   items        SaleItem[]
   payments     Payment[]
   transactions CustomerTransaction[]
+  returns      SalesReturn[]
 }
 
 enum PaymentStatus {
@@ -542,4 +567,319 @@ enum ApprovalStatus {
   pending
   approved
   rejected
+}
+
+// ==================== NEW FEATURES ====================
+
+// Feature 2: Sales Return & Credit Notes
+model SalesReturn {
+  id              String          @id @default(cuid())
+  returnNumber    String          @unique
+  saleId          String
+  sale            Sale            @relation(fields: [saleId], references: [id])
+  customerId      String?
+  customer        Customer?       @relation(fields: [customerId], references: [id])
+  reason          String          @db.Text
+  totalAmount     Float
+  status          ReturnStatus    @default(pending)
+  approvedBy      String?
+  approvedAt      DateTime?
+  returnDate      DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  items           SalesReturnItem[]
+}
+
+model SalesReturnItem {
+  id              String        @id @default(cuid())
+  salesReturnId   String
+  salesReturn     SalesReturn   @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  productName     String
+  quantity        Int
+  price           Float
+  total           Float
+}
+
+enum ReturnStatus {
+  pending
+  approved
+  rejected
+}
+
+// Feature 3: Low Stock Alerts - reorderPoint added to Product
+// (reorderPoint field added to Product model via migration)
+
+// Feature 6: Product Expiry Tracking
+model ProductBatch {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  batchNo     String
+  mfgDate     DateTime?
+  expDate     DateTime
+  quantity    Int
+  branchId    String?
+  branch      Branch?   @relation(fields: [branchId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@unique([productId, batchNo])
+}
+
+// Feature 8: Purchase Management (Vendor/Supplier)
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  contactPerson String?
+  phone         String
+  email         String?
+  gstin         String?
+  pan           String?
+  address       String?   @db.Text
+  bankName      String?
+  bankAccountNo String?
+  bankIfsc      String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  purchases     Purchase[]
+}
+
+model Purchase {
+  id              String          @id @default(cuid())
+  purchaseNumber  String          @unique
+  supplierId      String
+  supplier        Supplier        @relation(fields: [supplierId], references: [id])
+  totalAmount     Float
+  discount        Float           @default(0)
+  finalAmount     Float
+  cgstRate        Float           @default(2.5)
+  sgstRate        Float           @default(2.5)
+  paymentStatus   PaymentStatus   @default(unpaid)
+  amountPaid      Float           @default(0)
+  balanceDue      Float           @default(0)
+  notes           String?         @db.Text
+  purchaseDate    DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  items           PurchaseItem[]
+}
+
+model PurchaseItem {
+  id          String    @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  productName String
+  quantity    Int
+  price       Float
+  total       Float
+  batchNo     String?
+  expDate     String?
+  mfgDate     String?
+}
+
+// Feature 12: Leave Management
+model LeaveRequest {
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  leaveType     LeaveType
+  startDate     DateTime      @db.Date
+  endDate       DateTime      @db.Date
+  totalDays     Float
+  reason        String        @db.Text
+  status        ApprovalStatus @default(pending)
+  approvedBy    String?
+  approvedAt    DateTime?
+  rejectionReason String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum LeaveType {
+  casual
+  sick
+  earned
+  unpaid
+  maternity
+  paternity
+}
+
+// Feature 13: Damage/Wastage Tracking
+model DamageRecord {
+  id            String        @id @default(cuid())
+  productId     String
+  product       Product       @relation(fields: [productId], references: [id])
+  branchId      String?
+  branch        Branch?       @relation(fields: [branchId], references: [id])
+  quantity      Int
+  reason        String        @db.Text
+  reportedBy    String
+  reportedByUser User         @relation(fields: [reportedBy], references: [id])
+  damageDate    DateTime      @default(now())
+  status        ApprovalStatus @default(pending)
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+}
+
+// Feature 15: Audit Log
+model AuditLog {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  action      String    // CREATE, UPDATE, DELETE, APPROVE, REJECT, LOGIN, LOGOUT
+  entity      String    // Sale, User, Product, etc.
+  entityId    String?
+  oldValues   String?   @db.Text
+  newValues   String?   @db.Text
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+}
+
+// ==================== GPS TRACKING ====================
+
+// Salesman Location - Real-time GPS tracking
+model SalesmanLocation {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  latitude    Float
+  longitude   Float
+  accuracy    Float?    // GPS accuracy in meters
+  speed       Float?    // Speed in km/h
+  heading     Float?    // Direction in degrees
+  altitude    Float?    // Altitude in meters
+  batteryLevel Float?   // Device battery percentage
+  address     String?   @db.Text  // Reverse geocoded address
+  timestamp   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, timestamp])
+}
+
+// Customer Visit - Track visits to customer locations
+model CustomerVisit {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  customerName    String?   // If not linked to customer
+  // Check-in details
+  checkInTime     DateTime
+  checkInLat      Float
+  checkInLng      Float
+  checkInAddress  String?   @db.Text
+  checkInPhoto    String?   @db.LongText  // Selfie/shop photo
+  // Check-out details
+  checkOutTime    DateTime?
+  checkOutLat     Float?
+  checkOutLng     Float?
+  checkOutAddress String?   @db.Text
+  // Visit metrics
+  durationMinutes Int?      // Calculated on checkout
+  distanceFromCustomer Float? // Distance from customer's registered location
+  // Outcome
+  visitPurpose    String?   // Sales, Collection, Delivery, Follow-up
+  outcome         VisitOutcome?
+  notes           String?   @db.Text
+  orderId         String?   // If order was created
+  saleId          String?   // If sale was made
+  amountCollected Float?    // If payment was collected
+  visitDate       DateTime  @db.Date
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId, visitDate])
+}
+
+enum VisitOutcome {
+  order_placed
+  payment_collected
+  follow_up_needed
+  not_interested
+  shop_closed
+  customer_not_available
+  other
+}
+
+// Daily Route Summary - Aggregated daily stats
+model DailyRouteSummary {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  date              DateTime  @db.Date
+  startTime         DateTime?
+  endTime           DateTime?
+  totalDistanceKm   Float     @default(0)
+  totalCustomersPlanned Int   @default(0)
+  totalCustomersVisited Int   @default(0)
+  totalOrdersTaken  Int       @default(0)
+  totalAmountCollected Float  @default(0)
+  productiveHours   Float     @default(0)
+  idleTimeMinutes   Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([userId, date])
+}
+
+// Customer Location - Store customer's registered location for geofencing
+model CustomerLocation {
+  id          String    @id @default(cuid())
+  customerId  String    @unique
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  latitude    Float
+  longitude   Float
+  address     String?   @db.Text
+  geofenceRadius Float  @default(100) // Radius in meters for visit verification
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ==================== STOCK UPDATE REQUESTS & NOTIFICATIONS ====================
+
+// Stock Update Request - Branch manager requests stock changes, admin approves
+model StockUpdateRequest {
+  id                String           @id @default(cuid())
+  branchId          String
+  branch            Branch           @relation(fields: [branchId], references: [id])
+  productId         String
+  product           Product          @relation(fields: [productId], references: [id])
+  requestType       StockRequestType @default(update_quantity)
+  currentQuantity   Int?
+  requestedQuantity Int
+  reason            String?          @db.Text
+  requestedBy       String
+  requestedByUser   User             @relation("StockRequests", fields: [requestedBy], references: [id])
+  status            ApprovalStatus   @default(pending)
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+enum StockRequestType {
+  update_quantity
+  add_product
+}
+
+// Notification - Database-backed notifications for users
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("UserNotifications", fields: [userId], references: [id])
+  type        String   // stock_update_request, stock_approved, stock_rejected, etc.
+  title       String
+  message     String   @db.Text
+  entityType  String?  // StockUpdateRequest, etc.
+  entityId    String?
+  isRead      Boolean  @default(false)
+  createdBy   String?
+  createdAt   DateTime @default(now())
 }

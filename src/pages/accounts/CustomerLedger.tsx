@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { customersApi, paymentsApi } from '../../services/api';
 import type { Customer, CustomerTransaction } from '../../types';
+import { jsPDF } from 'jspdf';
 import '../stock/Stock.css';
 
 export function CustomerLedger() {
@@ -585,6 +586,50 @@ export function CustomerLedger() {
     }
   };
 
+  const generatePartyLedgerPdf = async () => {
+    if (!selectedCustomer) return;
+    try {
+      const ledger = await customersApi.getLedger(selectedCustomer.id);
+      const sorted = [...ledger].sort((a: any, b: any) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const lineHeight = 6;
+      let y = 12;
+
+      const pushLine = (text: string, isHeader = false) => {
+        if (y > 285) {
+          pdf.addPage();
+          y = 12;
+        }
+        pdf.setFont('helvetica', isHeader ? 'bold' : 'normal');
+        pdf.setFontSize(isHeader ? 11 : 9);
+        pdf.text(text, 10, y);
+        y += lineHeight;
+      };
+
+      pushLine('Dynamic Crop Science - Party Ledger', true);
+      pushLine(`Customer: ${selectedCustomer.name}`);
+      pushLine(`Phone: ${selectedCustomer.phone}`);
+      pushLine(`GSTIN: ${selectedCustomer.gstin || 'N/A'}`);
+      pushLine('');
+      pushLine('Date | Voucher | Method | Debit | Credit | Balance', true);
+
+      sorted.forEach((txn: any) => {
+        const date = new Date(txn.transactionDate).toLocaleDateString('en-IN');
+        const voucher = txn.type === 'sale' ? (txn.sale?.billNumber || 'Sale') : 'Payment';
+        const method = txn.payment?.paymentMethod || '-';
+        const debit = txn.type === 'sale' ? txn.amount.toFixed(2) : '0.00';
+        const credit = txn.type !== 'sale' ? txn.amount.toFixed(2) : '0.00';
+        const balance = txn.balanceAfter.toFixed(2);
+        pushLine(`${date} | ${voucher} | ${method} | ${debit} | ${credit} | ${balance}`);
+      });
+
+      pdf.save(`Party_Ledger_${selectedCustomer.name.replace(/\s+/g, '_')}.pdf`);
+    } catch (error) {
+      alert('Failed to generate PDF ledger');
+      console.error(error);
+    }
+  };
+
   return (
     <div className="stock-page">
       <div className="page-header">
@@ -793,7 +838,15 @@ export function CustomerLedger() {
                       style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                     >
                       <Download size={16} />
-                      Party Ledger
+                      Party Ledger XLS
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={generatePartyLedgerPdf}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <FileText size={16} />
+                      Party Ledger PDF
                     </button>
                   </div>
                 </div>

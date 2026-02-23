@@ -71,6 +71,7 @@ export interface Product {
   caseQty: number; // Quantity per case
   gstRate: number; // GST percentage (e.g., 5 for 5%)
   description?: string;
+  expDate?: string; // Product expiry date
   createdAt: Date;
 }
 
@@ -371,4 +372,41 @@ export interface Expenditure {
   rejectionReason?: string;
   createdAt: Date;
   updatedAt?: Date;
+}
+
+// Stock Update Request
+export type StockRequestType = 'update_quantity' | 'add_product';
+
+export interface StockUpdateRequest {
+  id: string;
+  branchId: string;
+  branch?: Branch;
+  productId: string;
+  product?: Product;
+  requestType: StockRequestType;
+  currentQuantity?: number;
+  requestedQuantity: number;
+  reason?: string;
+  requestedBy: string;
+  requestedByUser?: { id: string; name: string; email: string; employeeCode?: string };
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// Notification
+export interface AppNotification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  entityType?: string;
+  entityId?: string;
+  isRead: boolean;
+  createdBy?: string;
+  createdAt: string;
 }

@@ -17,7 +17,10 @@ export function Products() {
     unit: '',
     caseQty: '',
     gstRate: '5',
-    description: ''
+    description: '',
+    batchNo: '',
+    mfgDate: '',
+    expDate: ''
   });
 
   const categories = ['Fertilizer', 'NPK', 'Micro Nutrients', 'Organic', 'Other'];
@@ -36,7 +39,10 @@ export function Products() {
           unit: product.unit,
           caseQty: product.caseQty?.toString() || '',
           gstRate: product.gstRate?.toString() || '5',
-          description: product.description || ''
+          description: product.description || '',
+          batchNo: (product as any).batchNo || '',
+          mfgDate: (product as any).mfgDate ? (product as any).mfgDate.split('T')[0] : '',
+          expDate: product.expDate ? product.expDate.split('T')[0] : ''
         });
         setEditingProduct(productId);
       }
@@ -50,7 +56,10 @@ export function Products() {
         unit: '',
         caseQty: '',
         gstRate: '5',
-        description: ''
+        description: '',
+        batchNo: '',
+        mfgDate: '',
+        expDate: ''
       });
       setEditingProduct(null);
     }
@@ -69,7 +78,10 @@ export function Products() {
       unit: '',
       caseQty: '',
       gstRate: '5',
-      description: ''
+      description: '',
+      batchNo: '',
+      mfgDate: '',
+      expDate: ''
     });
   };
 
@@ -85,7 +97,10 @@ export function Products() {
       unit: formData.unit,
       caseQty: parseInt(formData.caseQty) || 1,
       gstRate: parseFloat(formData.gstRate) || 5,
-      description: formData.description
+      description: formData.description,
+      batchNo: formData.batchNo || undefined,
+      mfgDate: formData.mfgDate ? new Date(formData.mfgDate).toISOString() : undefined,
+      expDate: formData.expDate ? new Date(formData.expDate).toISOString() : undefined
     };
 
     if (editingProduct) {
@@ -145,6 +160,9 @@ export function Products() {
                 <th>GST %</th>
                 <th>Price (incl GST)</th>
                 <th>MRP</th>
+                <th>Batch No</th>
+                <th>MFG Date</th>
+                <th>Exp Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -166,6 +184,21 @@ export function Products() {
                     <td>{product.gstRate || 5}%</td>
                     <td>₹{product.price.toLocaleString()}</td>
                     <td>{product.mrp ? `₹${product.mrp.toLocaleString()}` : '-'}</td>
+                    <td>{(product as any).batchNo || '-'}</td>
+                    <td>
+                      {(product as any).mfgDate ? (
+                        <span className="badge badge-primary">
+                          {new Date((product as any).mfgDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td>
+                      {product.expDate ? (
+                        <span className={`badge ${new Date(product.expDate) < new Date() ? 'badge-danger' : 'badge-primary'}`}>
+                          {new Date(product.expDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </span>
+                      ) : '-'}
+                    </td>
                     <td>
                       <div className="action-buttons">
                         <button
@@ -186,7 +219,7 @@ export function Products() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="text-center text-gray-500">
+                  <td colSpan={11} className="text-center text-gray-500">
                     No products found
                   </td>
                 </tr>
@@ -305,17 +338,49 @@ export function Products() {
                     />
                   </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">MRP (₹) - Optional</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={formData.mrp}
-                    onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
-                    placeholder="Maximum Retail Price"
-                    min="0"
-                    step="0.01"
-                  />
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">MRP (₹) - Optional</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={formData.mrp}
+                      onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
+                      placeholder="Maximum Retail Price"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Batch No - Optional</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.batchNo}
+                      onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
+                      placeholder="e.g., B2024-001"
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Manufacturing Date - Optional</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={formData.mfgDate}
+                      onChange={(e) => setFormData({ ...formData, mfgDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Expiry Date - Optional</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={formData.expDate}
+                      onChange={(e) => setFormData({ ...formData, expDate: e.target.value })}
+                    />
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Description</label>

@@ -19,9 +19,25 @@ import {
   ClipboardList,
   Receipt,
   Landmark,
-  Clock
+  Clock,
+  // New feature icons
+  RotateCcw,
+  AlertTriangle,
+  DollarSign,
+  Bell,
+  CalendarClock,
+  ShoppingBag,
+  Globe,
+  CalendarDays,
+  Trash2,
+  ScrollText,
+  Navigation,
+  Handshake,
+  CircleDollarSign,
+  Video
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
+import { useLanguage } from '../../i18n/useLanguage';
 import './Layout.css';
 
 interface LayoutProps {
@@ -33,6 +49,7 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, logout, getBranchById } = useStore();
+  const { t } = useLanguage();
 
   const handleLogout = () => {
     logout();
@@ -41,8 +58,8 @@ export function Layout({ children }: LayoutProps) {
 
   const getMenuItems = () => {
     const baseItems = [
-      { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { path: '/profile', icon: UserCircle, label: 'Profile' },
+      { path: '/dashboard', icon: LayoutDashboard, label: t.dashboard },
+      { path: '/profile', icon: UserCircle, label: t.profile },
     ];
 
     if (currentUser?.role === 'stock_manager') {
@@ -60,7 +77,23 @@ export function Layout({ children }: LayoutProps) {
         { path: '/customer-ledger', icon: Wallet, label: 'Customer Ledger' },
         { path: '/accounts', icon: Calculator, label: 'Accounts' },
         { path: '/all-sales', icon: ShoppingCart, label: 'All Sales' },
+        // New Features
+        { path: '/gst-reports', icon: FileText, label: 'GST Reports' },
+        { path: '/sales-returns', icon: RotateCcw, label: 'Sales Returns' },
+        { path: '/stock-alerts', icon: AlertTriangle, label: 'Stock Alerts' },
+        { path: '/payroll', icon: DollarSign, label: 'Payroll' },
+        { path: '/notifications', icon: Bell, label: 'Notifications' },
+        { path: '/expiry-tracking', icon: CalendarClock, label: 'Expiry Tracking' },
+        { path: '/purchases', icon: ShoppingBag, label: 'Purchases' },
+        { path: '/leave-management', icon: CalendarDays, label: 'Leave Mgmt' },
+        { path: '/damage-tracking', icon: Trash2, label: 'Damage Tracking' },
+        { path: '/audit-log', icon: ScrollText, label: 'Audit Log' },
+        { path: '/route-tracking', icon: Navigation, label: 'Route Tracking' },
         { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
+        { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
+        { path: '/language-settings', icon: Globe, label: 'Language' },
       ];
     }
 
@@ -68,22 +101,40 @@ export function Layout({ children }: LayoutProps) {
       return [
         ...baseItems,
         { path: '/branch-inventory', icon: Package, label: 'Branch Inventory' },
+        { path: '/all-branch-stock', icon: Truck, label: 'All Branch Stock' },
+        { path: '/stock-requests', icon: ClipboardList, label: 'Stock Requests' },
         { path: '/salesmen', icon: Users, label: 'Salesmen' },
-        { path: '/branch-sales', icon: ShoppingCart, label: 'Branch Sales' },
-        { path: '/reports', icon: BarChart3, label: 'Reports' },
+        { path: '/branch-sales', icon: ShoppingCart, label: t.sales },
+        { path: '/branch-orders', icon: ShoppingBag, label: 'Orders' },
+        { path: '/branch-attendance', icon: Clock, label: 'Attendance Mgmt' },
+        { path: '/branch-expenditures', icon: Receipt, label: 'Expenditures' },
+        { path: '/branch-leaves', icon: CalendarDays, label: 'Leave Mgmt' },
+        { path: '/branch-damages', icon: Trash2, label: 'Damage Tracking' },
+        { path: '/branch-stock-alerts', icon: AlertTriangle, label: 'Stock Alerts' },
+        { path: '/notifications', icon: Bell, label: 'Notifications' },
+        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
+        { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
+        { path: '/reports', icon: BarChart3, label: t.reports },
       ];
     }
 
     if (currentUser?.role === 'salesman') {
       return [
         ...baseItems,
-        { path: '/my-attendance', icon: Clock, label: 'Attendance' },
-        { path: '/my-stock', icon: Package, label: 'My Stock' },
-        { path: '/take-product', icon: Truck, label: 'Take Product' },
-        { path: '/create-bill', icon: FileText, label: 'Create Bill' },
-        { path: '/my-orders', icon: ClipboardList, label: 'My Orders' },
-        { path: '/my-sales', icon: ShoppingCart, label: 'My Sales' },
-        { path: '/my-expenditures', icon: Receipt, label: 'Expenditures' },
+        { path: '/my-attendance', icon: Clock, label: t.attendance },
+        { path: '/my-route', icon: Navigation, label: t.myRoute },
+        { path: '/my-stock', icon: Package, label: t.myStock },
+        { path: '/take-product', icon: Truck, label: t.takeProduct },
+        { path: '/create-bill', icon: FileText, label: t.createBill },
+        { path: '/my-orders', icon: ClipboardList, label: t.myOrders },
+        { path: '/my-sales', icon: ShoppingCart, label: t.mySales },
+        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
+        { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
+        { path: '/my-expenditures', icon: Receipt, label: t.expenditures },
+        { path: '/my-leaves', icon: CalendarDays, label: t.myLeaves },
+        { path: '/language-settings', icon: Globe, label: t.languageSettings },
       ];
     }
 
@@ -101,7 +152,7 @@ export function Layout({ children }: LayoutProps) {
           <Menu size={24} />
         </button>
         <div className="mobile-header-title">
-          <h1>DynamicCrop ERP</h1>
+          <h1>DynamicInventory</h1>
         </div>
       </header>
 
@@ -114,9 +165,9 @@ export function Layout({ children }: LayoutProps) {
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <Package size={32} />
+            <img src="/logo.png" alt="DynamicInventory" className="sidebar-logo-img" />
             <div>
-              <h2>DynamicCrop</h2>
+              <h2>DynamicInventory</h2>
               <span>ERP System</span>
             </div>
           </div>
@@ -165,7 +216,7 @@ export function Layout({ children }: LayoutProps) {
         <div className="sidebar-footer">
           <button className="logout-btn" onClick={handleLogout}>
             <LogOut size={20} />
-            <span>Logout</span>
+            <span>{t.logout}</span>
           </button>
         </div>
       </aside>
