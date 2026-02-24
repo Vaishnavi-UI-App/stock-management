@@ -1,7 +1,7 @@
 {
-  "name": "DynamicCrop ERP - Stock Management",
-  "short_name": "DynamicCrop",
-  "description": "Dynamic Crop Science India Pvt Ltd - ERP & Stock Management System",
+  "name": "DynamicIndia ERP System",
+  "short_name": "DynamicIndia",
+  "description": "DynamicIndia - ERP System",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

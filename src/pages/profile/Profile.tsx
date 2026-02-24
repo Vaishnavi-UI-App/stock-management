@@ -90,12 +90,55 @@ export function Profile() {
     }
   }, [currentUser]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+  const resizeImage = (file: File, maxSize: number): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = maxSize;
+          canvas.height = maxSize;
+          const ctx = canvas.getContext('2d')!;
+
+          // Fill white background
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, maxSize, maxSize);
+
+          // Center-crop: take the smaller dimension and crop from center
+          const size = Math.min(img.width, img.height);
+          const sx = (img.width - size) / 2;
+          const sy = (img.height - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, maxSize, maxSize);
+
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
     const file = e.target.files?.[0];
     if (file) {
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         setMessage({ type: 'error', text: 'File size should be less than 5MB' });
+        return;
+      }
+
+      // Profile photo: auto-resize to 300x300px standard size
+      if (field === 'profilePhoto' && file.type.startsWith('image/')) {
+        try {
+          const resized = await resizeImage(file, 300);
+          setFormData(prev => ({ ...prev, [field]: resized }));
+          setMessage({ type: 'success', text: 'Profile photo resized to 300x300px standard size' });
+        } catch {
+          setMessage({ type: 'error', text: 'Failed to process image' });
+        }
         return;
       }
 

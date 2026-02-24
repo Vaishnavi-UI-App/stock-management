@@ -103,8 +103,6 @@ export function Layout({ children }: LayoutProps) {
         { path: '/branch-inventory', icon: Package, label: 'Branch Inventory' },
         { path: '/all-branch-stock', icon: Truck, label: 'All Branch Stock' },
         { path: '/stock-requests', icon: ClipboardList, label: 'Stock Requests' },
-        { path: '/salesmen', icon: Users, label: 'Salesmen' },
-        { path: '/branch-sales', icon: ShoppingCart, label: t.sales },
         { path: '/branch-orders', icon: ShoppingBag, label: 'Orders' },
         { path: '/branch-attendance', icon: Clock, label: 'Attendance Mgmt' },
         { path: '/branch-expenditures', icon: Receipt, label: 'Expenditures' },
@@ -112,7 +110,6 @@ export function Layout({ children }: LayoutProps) {
         { path: '/branch-damages', icon: Trash2, label: 'Damage Tracking' },
         { path: '/branch-stock-alerts', icon: AlertTriangle, label: 'Stock Alerts' },
         { path: '/notifications', icon: Bell, label: 'Notifications' },
-        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
         { path: '/meeting', icon: Video, label: 'Meeting' },
         { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
         { path: '/reports', icon: BarChart3, label: t.reports },
@@ -152,7 +149,7 @@ export function Layout({ children }: LayoutProps) {
           <Menu size={24} />
         </button>
         <div className="mobile-header-title">
-          <h1>DynamicInventory</h1>
+          <h1>DynamicIndia</h1>
         </div>
       </header>
 
@@ -165,9 +162,9 @@ export function Layout({ children }: LayoutProps) {
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <img src="/logo.png" alt="DynamicInventory" className="sidebar-logo-img" />
+            <img src="/logo.png" alt="DynamicIndia" className="sidebar-logo-img" />
             <div>
-              <h2>DynamicInventory</h2>
+              <h2>DynamicIndia</h2>
               <span>ERP System</span>
             </div>
           </div>

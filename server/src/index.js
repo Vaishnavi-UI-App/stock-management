@@ -1404,6 +1404,125 @@ app.post('/api/payments', authMiddleware, async (req, res) => {
   }
 });
 
+// Update payment (Admin only)
+app.put('/api/payments/:id', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager') {
+      return res.status(403).json({ error: 'Only admin can update payments' });
+    }
+
+    const { id } = req.params;
+    const { amount, paymentMethod, referenceNo, notes, paymentDate } = req.body;
+
+    const existing = await prisma.payment.findUnique({
+      where: { id },
+      include: { sale: true }
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const parsedAmount = amount === undefined ? existing.amount : Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      return res.status(400).json({ error: 'Invalid payment amount' });
+    }
+    const nextAmount = parsedAmount;
+    const nextMethod = paymentMethod || existing.paymentMethod;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findUnique({ where: { id: existing.customerId } });
+      if (!customer) throw new Error('Customer not found');
+
+      const updated = await tx.payment.update({
+        where: { id },
+        data: {
+          amount: nextAmount,
+          paymentMethod: nextMethod,
+          referenceNo: referenceNo === undefined ? existing.referenceNo : referenceNo,
+          notes: notes === undefined ? existing.notes : notes,
+          paymentDate: paymentDate ? new Date(paymentDate) : existing.paymentDate
+        }
+      });
+
+      // Revert old payment effect and apply new one
+      const currentBalanceAfter = customer.currentBalance + existing.amount - nextAmount;
+      const totalPaidAfter = (customer.totalPaid || 0) - existing.amount + nextAmount;
+
+      await tx.customer.update({
+        where: { id: existing.customerId },
+        data: {
+          currentBalance: currentBalanceAfter,
+          totalPaid: Math.max(0, totalPaidAfter)
+        }
+      });
+
+      if (existing.saleId) {
+        const sale = await tx.sale.findUnique({ where: { id: existing.saleId } });
+        if (sale) {
+          const newAmountPaid = Math.max(0, (sale.amountPaid || 0) - existing.amount + nextAmount);
+          const newBalanceDue = Math.max(0, sale.finalAmount - newAmountPaid);
+          let paymentStatus = 'unpaid';
+          if (newBalanceDue <= 0) paymentStatus = 'paid';
+          else if (newAmountPaid > 0) paymentStatus = 'partial';
+
+          await tx.sale.update({
+            where: { id: existing.saleId },
+            data: {
+              amountPaid: newAmountPaid,
+              balanceDue: newBalanceDue,
+              paymentStatus
+            }
+          });
+        }
+      }
+
+      const txn = await tx.customerTransaction.findFirst({
+        where: { paymentId: id }
+      });
+      const txnDescription = `Payment updated - ${nextMethod}${referenceNo ? ` (Ref: ${referenceNo})` : ''}`;
+      if (txn) {
+        await tx.customerTransaction.update({
+          where: { id: txn.id },
+          data: {
+            amount: nextAmount,
+            balanceAfter: currentBalanceAfter,
+            description: txnDescription,
+            transactionDate: paymentDate ? new Date(paymentDate) : txn.transactionDate
+          }
+        });
+      } else {
+        await tx.customerTransaction.create({
+          data: {
+            customerId: existing.customerId,
+            saleId: existing.saleId || null,
+            paymentId: id,
+            type: 'payment',
+            amount: nextAmount,
+            balanceAfter: currentBalanceAfter,
+            description: txnDescription,
+            transactionDate: paymentDate ? new Date(paymentDate) : new Date()
+          }
+        });
+      }
+
+      return updated;
+    });
+
+    const complete = await prisma.payment.findUnique({
+      where: { id: result.id },
+      include: {
+        customer: { select: { id: true, name: true, phone: true, currentBalance: true } },
+        sale: { select: { id: true, billNumber: true } }
+      }
+    });
+
+    createAuditLog(req.user.id, 'UPDATE', 'Payment', id, null, { amount: nextAmount, paymentMethod: nextMethod }, req.ip);
+    res.json(complete);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get payment summary/dashboard stats
 app.get('/api/payments/summary', authMiddleware, async (req, res) => {
   try {

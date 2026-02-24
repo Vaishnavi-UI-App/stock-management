@@ -483,6 +483,273 @@ export function CustomerLedger() {
     }
   };
 
+  const generateReportPdf = async () => {
+    setIsGenerating(true);
+    try {
+      const { startDate, endDate } = getDateRange();
+      const allCustomers = await customersApi.getAll();
+      const periodLabel = reportType === 'monthly'
+        ? `${getMonthName(selectedMonth)} ${selectedYear}`
+        : `Q${selectedQuarter} (${getQuarterMonths(selectedQuarter)}) ${selectedYear}`;
+      const startDateStr = startDate.toLocaleDateString('en-IN');
+      const endDateStr = endDate.toLocaleDateString('en-IN');
+
+      // Collect data
+      const customerData: { name: string; gstin: string; phone: string; totalSales: number; totalPaid: number; outstanding: number; advance: number }[] = [];
+      const allSales: { date: string; customer: string; invoice: string; amount: number; received: number; balance: number }[] = [];
+      const allPayments: { date: string; customer: string; type: string; description: string; amount: number; balanceAfter: number }[] = [];
+
+      for (const customer of allCustomers) {
+        const ledger = await customersApi.getLedger(customer.id, {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString()
+        });
+        if (ledger.length > 0) {
+          let totalSales = 0, totalPaid = 0;
+          ledger.forEach((txn: CustomerTransaction) => {
+            const txnDate = new Date(txn.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            if (txn.type === 'sale') {
+              totalSales += txn.amount;
+              const received = txn.sale?.amountPaid || 0;
+              allSales.push({ date: txnDate, customer: customer.name, invoice: txn.description?.match(/INV-\d+/)?.[0] || '-', amount: txn.amount, received, balance: txn.amount - received });
+            } else {
+              totalPaid += txn.amount;
+              allPayments.push({ date: txnDate, customer: customer.name, type: txn.type.toUpperCase(), description: txn.description || '', amount: txn.amount, balanceAfter: txn.balanceAfter });
+            }
+          });
+          const bal = totalSales - totalPaid;
+          customerData.push({ name: customer.name, gstin: customer.gstin || '', phone: customer.phone, totalSales, totalPaid, outstanding: bal > 0 ? bal : 0, advance: bal < 0 ? Math.abs(bal) : 0 });
+        }
+      }
+
+      if (customerData.length === 0) {
+        alert('No transactions found for the selected period');
+        setIsGenerating(false);
+        return;
+      }
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageW = pdf.internal.pageSize.getWidth();
+      let y = 15;
+      const checkPage = (need: number) => { if (y + need > 280) { pdf.addPage(); y = 15; } };
+      const rowH = 6;
+
+      // Header
+      pdf.setFillColor(0, 166, 81);
+      pdf.rect(0, 0, pageW, 28, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.text('Dynamic Crop Science Pvt Ltd', 14, 12);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Phone: 7020455358', 14, 19);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text('CUSTOMER LEDGER REPORT', pageW - 14, 12, { align: 'right' });
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Period: ${periodLabel}`, pageW - 14, 19, { align: 'right' });
+      pdf.text(`${startDateStr} to ${endDateStr}`, pageW - 14, 24, { align: 'right' });
+      y = 36;
+
+      // ====== CUSTOMER WISE SUMMARY ======
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('CUSTOMER WISE SUMMARY', 14, y);
+      y += 7;
+
+      const sumCols = [
+        { h: '#', x: 14, w: 8 }, { h: 'Customer', x: 22, w: 42 }, { h: 'Phone', x: 64, w: 26 },
+        { h: 'Total Sales', x: 90, w: 28 }, { h: 'Total Paid', x: 118, w: 28 },
+        { h: 'Outstanding', x: 146, w: 26 }, { h: 'Advance', x: 172, w: 22 }
+      ];
+      const sumW = sumCols[sumCols.length - 1].x + sumCols[sumCols.length - 1].w - 14;
+
+      pdf.setFillColor(55, 65, 81);
+      pdf.rect(14, y, sumW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(7);
+      sumCols.forEach(c => pdf.text(c.h, c.x + 1, y + 4));
+      y += rowH;
+      pdf.setTextColor(0, 0, 0);
+
+      let gSales = 0, gPaid = 0, gOut = 0, gAdv = 0;
+      customerData.forEach((c, i) => {
+        checkPage(rowH);
+        pdf.setFillColor(i % 2 === 0 ? 255 : 249, i % 2 === 0 ? 255 : 250, i % 2 === 0 ? 255 : 251);
+        pdf.rect(14, y, sumW, rowH, 'F');
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
+        pdf.text(`${i + 1}`, sumCols[0].x + 1, y + 4);
+        pdf.text(c.name.substring(0, 22), sumCols[1].x + 1, y + 4);
+        pdf.text(c.phone, sumCols[2].x + 1, y + 4);
+        pdf.text(`Rs.${c.totalSales.toFixed(0)}`, sumCols[3].x + 1, y + 4);
+        pdf.text(`Rs.${c.totalPaid.toFixed(0)}`, sumCols[4].x + 1, y + 4);
+        if (c.outstanding > 0) { pdf.setTextColor(198, 40, 40); }
+        pdf.text(`Rs.${c.outstanding.toFixed(0)}`, sumCols[5].x + 1, y + 4);
+        pdf.setTextColor(0, 0, 0);
+        if (c.advance > 0) { pdf.setTextColor(21, 101, 192); }
+        pdf.text(`Rs.${c.advance.toFixed(0)}`, sumCols[6].x + 1, y + 4);
+        pdf.setTextColor(0, 0, 0);
+        gSales += c.totalSales; gPaid += c.totalPaid; gOut += c.outstanding; gAdv += c.advance;
+        y += rowH;
+      });
+
+      // Totals
+      checkPage(rowH);
+      pdf.setFillColor(55, 65, 81);
+      pdf.rect(14, y, sumW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7);
+      pdf.text('TOTAL', sumCols[1].x + 1, y + 4);
+      pdf.text(`Rs.${gSales.toFixed(0)}`, sumCols[3].x + 1, y + 4);
+      pdf.text(`Rs.${gPaid.toFixed(0)}`, sumCols[4].x + 1, y + 4);
+      pdf.text(`Rs.${gOut.toFixed(0)}`, sumCols[5].x + 1, y + 4);
+      pdf.text(`Rs.${gAdv.toFixed(0)}`, sumCols[6].x + 1, y + 4);
+      y += rowH + 10;
+
+      // ====== SALES DETAILS ======
+      checkPage(20);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('SALES DETAILS', 14, y);
+      y += 7;
+
+      const saleCols = [
+        { h: '#', x: 14, w: 8 }, { h: 'Date', x: 22, w: 22 }, { h: 'Customer', x: 44, w: 40 },
+        { h: 'Invoice', x: 84, w: 22 }, { h: 'Amount', x: 106, w: 24 },
+        { h: 'Received', x: 130, w: 24 }, { h: 'Balance', x: 154, w: 24 }
+      ];
+      const saleW = saleCols[saleCols.length - 1].x + saleCols[saleCols.length - 1].w - 14;
+
+      pdf.setFillColor(55, 65, 81);
+      pdf.rect(14, y, saleW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(7);
+      saleCols.forEach(c => pdf.text(c.h, c.x + 1, y + 4));
+      y += rowH;
+      pdf.setTextColor(0, 0, 0);
+
+      let tAmt = 0, tRec = 0, tBal = 0;
+      allSales.forEach((s, i) => {
+        checkPage(rowH);
+        pdf.setFillColor(i % 2 === 0 ? 255 : 249, i % 2 === 0 ? 255 : 250, i % 2 === 0 ? 255 : 251);
+        pdf.rect(14, y, saleW, rowH, 'F');
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
+        pdf.text(`${i + 1}`, saleCols[0].x + 1, y + 4);
+        pdf.text(s.date, saleCols[1].x + 1, y + 4);
+        pdf.text(s.customer.substring(0, 22), saleCols[2].x + 1, y + 4);
+        pdf.text(s.invoice, saleCols[3].x + 1, y + 4);
+        pdf.text(`Rs.${s.amount.toFixed(2)}`, saleCols[4].x + 1, y + 4);
+        pdf.text(`Rs.${s.received.toFixed(2)}`, saleCols[5].x + 1, y + 4);
+        pdf.text(`Rs.${s.balance.toFixed(2)}`, saleCols[6].x + 1, y + 4);
+        tAmt += s.amount; tRec += s.received; tBal += s.balance;
+        y += rowH;
+      });
+
+      checkPage(rowH);
+      pdf.setFillColor(55, 65, 81);
+      pdf.rect(14, y, saleW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7);
+      pdf.text('TOTAL', saleCols[2].x + 1, y + 4);
+      pdf.text(`Rs.${tAmt.toFixed(2)}`, saleCols[4].x + 1, y + 4);
+      pdf.text(`Rs.${tRec.toFixed(2)}`, saleCols[5].x + 1, y + 4);
+      pdf.text(`Rs.${tBal.toFixed(2)}`, saleCols[6].x + 1, y + 4);
+      y += rowH + 10;
+
+      // ====== PAYMENTS RECEIVED ======
+      if (allPayments.length > 0) {
+        checkPage(20);
+        pdf.setTextColor(0, 0, 0);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.text('PAYMENTS RECEIVED', 14, y);
+        y += 7;
+
+        const payCols = [
+          { h: '#', x: 14, w: 8 }, { h: 'Date', x: 22, w: 22 }, { h: 'Customer', x: 44, w: 40 },
+          { h: 'Type', x: 84, w: 20 }, { h: 'Amount', x: 104, w: 26 }, { h: 'Balance', x: 130, w: 26 }
+        ];
+        const payW = payCols[payCols.length - 1].x + payCols[payCols.length - 1].w - 14;
+
+        pdf.setFillColor(55, 65, 81);
+        pdf.rect(14, y, payW, rowH, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(7);
+        payCols.forEach(c => pdf.text(c.h, c.x + 1, y + 4));
+        y += rowH;
+        pdf.setTextColor(0, 0, 0);
+
+        let tPay = 0;
+        allPayments.forEach((p, i) => {
+          checkPage(rowH);
+          pdf.setFillColor(i % 2 === 0 ? 255 : 249, i % 2 === 0 ? 255 : 250, i % 2 === 0 ? 255 : 251);
+          pdf.rect(14, y, payW, rowH, 'F');
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7);
+          pdf.text(`${i + 1}`, payCols[0].x + 1, y + 4);
+          pdf.text(p.date, payCols[1].x + 1, y + 4);
+          pdf.text(p.customer.substring(0, 22), payCols[2].x + 1, y + 4);
+          pdf.text(p.type, payCols[3].x + 1, y + 4);
+          pdf.setTextColor(46, 125, 50);
+          pdf.text(`Rs.${p.amount.toFixed(2)}`, payCols[4].x + 1, y + 4);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(`Rs.${p.balanceAfter.toFixed(2)}`, payCols[5].x + 1, y + 4);
+          tPay += p.amount;
+          y += rowH;
+        });
+
+        checkPage(rowH);
+        pdf.setFillColor(55, 65, 81);
+        pdf.rect(14, y, payW, rowH, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.text('TOTAL', payCols[2].x + 1, y + 4);
+        pdf.text(`Rs.${tPay.toFixed(2)}`, payCols[4].x + 1, y + 4);
+        y += rowH + 10;
+      }
+
+      // ====== GRAND SUMMARY ======
+      checkPage(40);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFillColor(240, 249, 255);
+      pdf.setDrawColor(59, 130, 246);
+      pdf.roundedRect(14, y, pageW - 28, 34, 2, 2, 'FD');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.text('GRAND SUMMARY', 20, y + 8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.text(`Total Customers: ${customerData.length}`, 20, y + 15);
+      pdf.text(`Total Sales: Rs.${gSales.toFixed(2)}`, 20, y + 21);
+      pdf.text(`Total Payments: Rs.${gPaid.toFixed(2)}`, 20, y + 27);
+      pdf.text(`Total Outstanding: Rs.${gOut.toFixed(2)}`, pageW / 2, y + 15);
+      pdf.text(`Total Advance: Rs.${gAdv.toFixed(2)}`, pageW / 2, y + 21);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Net Balance: Rs.${(gOut - gAdv).toFixed(2)}`, pageW / 2, y + 27);
+
+      const fileName = reportType === 'monthly'
+        ? `Ledger_Report_${getMonthName(selectedMonth)}_${selectedYear}.pdf`
+        : `Ledger_Report_Q${selectedQuarter}_${selectedYear}.pdf`;
+      pdf.save(fileName);
+
+      setShowReportModal(false);
+      alert(`PDF Report downloaded: ${fileName}`);
+    } catch (error: any) {
+      alert(error.message || 'Failed to generate PDF report');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const generatePartyLedger = async () => {
     if (!selectedCustomer) return;
     try {
@@ -592,36 +859,182 @@ export function CustomerLedger() {
       const ledger = await customersApi.getLedger(selectedCustomer.id);
       const sorted = [...ledger].sort((a: any, b: any) => new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime());
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const lineHeight = 6;
-      let y = 12;
+      const pageW = pdf.internal.pageSize.getWidth();
+      let y = 15;
 
-      const pushLine = (text: string, isHeader = false) => {
-        if (y > 285) {
-          pdf.addPage();
-          y = 12;
-        }
-        pdf.setFont('helvetica', isHeader ? 'bold' : 'normal');
-        pdf.setFontSize(isHeader ? 11 : 9);
-        pdf.text(text, 10, y);
-        y += lineHeight;
+      const checkPage = (need: number) => {
+        if (y + need > 280) { pdf.addPage(); y = 15; }
       };
 
-      pushLine('Dynamic Crop Science - Party Ledger', true);
-      pushLine(`Customer: ${selectedCustomer.name}`);
-      pushLine(`Phone: ${selectedCustomer.phone}`);
-      pushLine(`GSTIN: ${selectedCustomer.gstin || 'N/A'}`);
-      pushLine('');
-      pushLine('Date | Voucher | Method | Debit | Credit | Balance', true);
+      // Company Header
+      pdf.setFillColor(0, 166, 81);
+      pdf.rect(0, 0, pageW, 28, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.text('Dynamic Crop Science Pvt Ltd', 14, 12);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Phone: 7020455358', 14, 19);
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('PARTY LEDGER', pageW - 14, 12, { align: 'right' });
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), pageW - 14, 19, { align: 'right' });
+      y = 36;
 
-      sorted.forEach((txn: any) => {
-        const date = new Date(txn.transactionDate).toLocaleDateString('en-IN');
-        const voucher = txn.type === 'sale' ? (txn.sale?.billNumber || 'Sale') : 'Payment';
-        const method = txn.payment?.paymentMethod || '-';
-        const debit = txn.type === 'sale' ? txn.amount.toFixed(2) : '0.00';
-        const credit = txn.type !== 'sale' ? txn.amount.toFixed(2) : '0.00';
-        const balance = txn.balanceAfter.toFixed(2);
-        pushLine(`${date} | ${voucher} | ${method} | ${debit} | ${credit} | ${balance}`);
+      // Customer Info Box
+      pdf.setTextColor(0, 0, 0);
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setFillColor(248, 250, 252);
+      pdf.roundedRect(14, y, pageW - 28, 28, 2, 2, 'FD');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text(selectedCustomer.name, 20, y + 8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.text(`Phone: ${selectedCustomer.phone}`, 20, y + 15);
+      pdf.text(`GSTIN: ${selectedCustomer.gstin || 'N/A'}`, 20, y + 21);
+
+      // Balance on right
+      const bal = selectedCustomer.currentBalance;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(bal > 0 ? 198 : 21, bal > 0 ? 40 : 101, bal > 0 ? 40 : 192);
+      pdf.text(`Balance: Rs.${Math.abs(bal).toLocaleString()}`, pageW - 20, y + 8, { align: 'right' });
+      pdf.setFontSize(9);
+      pdf.text(bal > 0 ? '(Amount Due)' : bal < 0 ? '(Advance)' : '(Clear)', pageW - 20, y + 15, { align: 'right' });
+      pdf.setTextColor(0, 0, 0);
+      y += 36;
+
+      // Opening Balance
+      let openingBalance = 0;
+      if (sorted.length > 0) {
+        const first = sorted[0];
+        openingBalance = first.type === 'sale'
+          ? first.balanceAfter - first.amount
+          : first.balanceAfter + first.amount;
+      }
+
+      // Table
+      const cols = [
+        { header: 'Date', x: 14, w: 24 },
+        { header: 'Voucher', x: 38, w: 30 },
+        { header: 'Sr No', x: 68, w: 24 },
+        { header: 'Mode', x: 92, w: 20 },
+        { header: 'Debit', x: 112, w: 24 },
+        { header: 'Credit', x: 136, w: 24 },
+        { header: 'Balance', x: 160, w: 30 },
+      ];
+      const tableW = cols[cols.length - 1].x + cols[cols.length - 1].w - 14;
+      const rowH = 7;
+
+      // Table Header
+      checkPage(rowH * 3);
+      pdf.setFillColor(55, 65, 81);
+      pdf.rect(14, y, tableW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      cols.forEach(col => {
+        pdf.text(col.header, col.x + 2, y + 5);
       });
+      y += rowH;
+      pdf.setTextColor(0, 0, 0);
+
+      // Opening Balance Row
+      pdf.setFillColor(245, 245, 245);
+      pdf.rect(14, y, tableW, rowH, 'F');
+      pdf.setFont('helvetica', 'italic');
+      pdf.setFontSize(8);
+      pdf.text('', cols[0].x + 2, y + 5);
+      pdf.text('Opening Balance', cols[1].x + 2, y + 5);
+      pdf.text('', cols[2].x + 2, y + 5);
+      pdf.text('', cols[3].x + 2, y + 5);
+      pdf.text('', cols[4].x + 2, y + 5);
+      pdf.text('', cols[5].x + 2, y + 5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Rs.${openingBalance.toFixed(2)}`, cols[6].x + 2, y + 5);
+      y += rowH;
+
+      // Data Rows
+      let totalDebit = 0;
+      let totalCredit = 0;
+      sorted.forEach((txn: any, idx: number) => {
+        checkPage(rowH);
+        if (idx % 2 === 0) {
+          pdf.setFillColor(255, 255, 255);
+        } else {
+          pdf.setFillColor(249, 250, 251);
+        }
+        pdf.rect(14, y, tableW, rowH, 'F');
+        pdf.setDrawColor(230, 230, 230);
+        pdf.line(14, y + rowH, 14 + tableW, y + rowH);
+
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        const date = new Date(txn.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' });
+        const voucher = txn.type === 'sale' ? 'Sales Invoice' : 'Payment-in';
+        const srNo = txn.type === 'sale' ? (txn.sale?.billNumber || '') : (txn.payment?.referenceNo || '');
+        const mode = txn.payment?.paymentMethod || '';
+        const debit = txn.type === 'sale' ? txn.amount : 0;
+        const credit = txn.type !== 'sale' ? txn.amount : 0;
+
+        totalDebit += debit;
+        totalCredit += credit;
+
+        pdf.text(date, cols[0].x + 2, y + 5);
+        pdf.text(voucher, cols[1].x + 2, y + 5);
+        pdf.text(srNo.substring(0, 12), cols[2].x + 2, y + 5);
+        pdf.text(mode, cols[3].x + 2, y + 5);
+
+        if (debit > 0) {
+          pdf.setTextColor(198, 40, 40);
+          pdf.text(`Rs.${debit.toFixed(2)}`, cols[4].x + 2, y + 5);
+        }
+        pdf.setTextColor(0, 0, 0);
+
+        if (credit > 0) {
+          pdf.setTextColor(46, 125, 50);
+          pdf.text(`Rs.${credit.toFixed(2)}`, cols[5].x + 2, y + 5);
+        }
+        pdf.setTextColor(0, 0, 0);
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Rs.${txn.balanceAfter.toFixed(2)}`, cols[6].x + 2, y + 5);
+        pdf.setFont('helvetica', 'normal');
+        y += rowH;
+      });
+
+      // Totals Row
+      checkPage(rowH + 20);
+      pdf.setFillColor(55, 65, 81);
+      pdf.rect(14, y, tableW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.text('TOTAL', cols[1].x + 2, y + 5);
+      pdf.text(`Rs.${totalDebit.toFixed(2)}`, cols[4].x + 2, y + 5);
+      pdf.text(`Rs.${totalCredit.toFixed(2)}`, cols[5].x + 2, y + 5);
+      const closingBal = sorted.length > 0 ? sorted[sorted.length - 1].balanceAfter : openingBalance;
+      pdf.text(`Rs.${closingBal.toFixed(2)}`, cols[6].x + 2, y + 5);
+      y += rowH + 10;
+
+      // Summary Box
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFillColor(240, 249, 255);
+      pdf.setDrawColor(59, 130, 246);
+      pdf.roundedRect(14, y, 80, 32, 2, 2, 'FD');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.text('Summary', 20, y + 8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.text(`Total Sales (Debit):  Rs.${totalDebit.toFixed(2)}`, 20, y + 15);
+      pdf.text(`Total Paid (Credit):  Rs.${totalCredit.toFixed(2)}`, 20, y + 21);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Closing Balance:  Rs.${closingBal.toFixed(2)}`, 20, y + 27);
 
       pdf.save(`Party_Ledger_${selectedCustomer.name.replace(/\s+/g, '_')}.pdf`);
     } catch (error) {
@@ -1195,23 +1608,25 @@ export function CustomerLedger() {
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setShowReportModal(false)}>
                 Cancel
               </button>
               <button
-                className="btn btn-primary"
+                className="btn btn-secondary"
                 onClick={generateReport}
                 disabled={isGenerating}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                {isGenerating ? (
-                  <>Generating...</>
-                ) : (
-                  <>
-                    <Download size={16} />
-                    Download Report
-                  </>
-                )}
+                {isGenerating ? 'Generating...' : (<><Download size={16} /> Download XLS</>)}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={generateReportPdf}
+                disabled={isGenerating}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {isGenerating ? 'Generating...' : (<><FileText size={16} /> Download PDF</>)}
               </button>
             </div>
           </div>

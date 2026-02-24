@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Get token from localStorage
 const getToken = () => localStorage.getItem('token');
@@ -291,6 +291,18 @@ export const paymentsApi = {
   }) =>
     apiRequest<any>('/payments', {
       method: 'POST',
+      body: JSON.stringify(paymentData),
+    }),
+
+  update: (id: string, paymentData: {
+    amount?: number;
+    paymentMethod?: string;
+    referenceNo?: string;
+    notes?: string;
+    paymentDate?: string;
+  }) =>
+    apiRequest<any>(`/payments/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(paymentData),
     }),
 

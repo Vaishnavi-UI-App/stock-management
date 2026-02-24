@@ -126,8 +126,6 @@ export function Dashboard() {
       const myBranchStock = branchStock.filter(bs => bs.branchId === branchId);
       const totalStock = myBranchStock.reduce((sum, bs) => sum + bs.quantity, 0);
       const branchSalesmen = users.filter(u => u.role === 'salesman' && u.branchId === branchId);
-      const branchSalesData = sales.filter(s => s.branchId === branchId);
-      const totalSalesAmount = branchSalesData.reduce((sum, s) => sum + s.finalAmount, 0);
 
       return [
         {
@@ -150,13 +148,6 @@ export function Dashboard() {
           icon: Users,
           color: '#22c55e',
           bgColor: 'rgba(34, 197, 94, 0.1)',
-        },
-        {
-          label: 'Total Sales',
-          value: `₹${totalSalesAmount.toLocaleString()}`,
-          icon: IndianRupee,
-          color: '#f59e0b',
-          bgColor: 'rgba(245, 158, 11, 0.1)',
         },
       ];
     }

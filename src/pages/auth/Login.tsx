@@ -37,9 +37,9 @@ export function Login() {
       {/* Left side - branding */}
       <div className="login-brand">
         <div className="login-brand-content">
-          <img src="/logo.png" alt="DynamicInventory" className="login-brand-logo" />
-          <h1 className="login-brand-title">DynamicInventory</h1>
-          <p className="login-brand-subtitle">ERP Stock Management System</p>
+          <img src="/logo.png" alt="DynamicIndia" className="login-brand-logo" />
+          <h1 className="login-brand-title">DynamicIndia</h1>
+          <p className="login-brand-subtitle">ERP System</p>
           <div className="login-brand-features">
             <div className="login-feature">
               <div className="login-feature-dot"></div>

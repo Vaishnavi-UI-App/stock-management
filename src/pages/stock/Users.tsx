@@ -279,7 +279,7 @@ export function Users() {
     if (cleanPhone.length === 10) {
       cleanPhone = '91' + cleanPhone;
     }
-    const message = `Hello ${name},\n\nYour DynamicInventory ERP login credentials:\n\nEmail: ${email}\nPassword: ${password}\n\nPlease login and change your password after first login.\n\nThank you!`;
+    const message = `Hello ${name},\n\nYour DynamicIndia ERP login credentials:\n\nEmail: ${email}\nPassword: ${password}\n\nPlease login and change your password after first login.\n\nThank you!`;
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };
