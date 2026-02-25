@@ -632,6 +632,45 @@ export const auditApi = {
   },
 };
 
+// ==================== DEALER APPLICATIONS API ====================
+
+export const dealerApplicationsApi = {
+  getAll: (filters?: { status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    const query = params.toString();
+    return apiRequest<any[]>(`/dealer-applications${query ? `?${query}` : ''}`);
+  },
+
+  getById: (id: string) => apiRequest<any>(`/dealer-applications/${id}`),
+
+  create: (data: any) =>
+    apiRequest<any>('/dealer-applications', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: any) =>
+    apiRequest<any>(`/dealer-applications/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/dealer-applications/${id}`, { method: 'DELETE' }),
+
+  approve: (id: string) =>
+    apiRequest<any>(`/dealer-applications/${id}/approve`, {
+      method: 'PUT',
+    }),
+
+  reject: (id: string, rejectionReason: string) =>
+    apiRequest<any>(`/dealer-applications/${id}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ rejectionReason }),
+    }),
+};
+
 // ==================== GPS TRACKING API ====================
 
 export interface SalesmanLocation {

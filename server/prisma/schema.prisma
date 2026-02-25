@@ -130,6 +130,7 @@ model User {
   // Stock update requests & notifications
   stockRequests  StockUpdateRequest[] @relation("StockRequests")
   notifications  Notification[]       @relation("UserNotifications")
+  dealerApplications DealerApplication[]
 }
 
 enum UserRole {
@@ -840,6 +841,85 @@ model CustomerLocation {
   geofenceRadius Float  @default(100) // Radius in meters for visit verification
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+// ==================== DEALER APPLICATION ====================
+
+enum DealerApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
+model DealerApplication {
+  id                String                  @id @default(cuid())
+  userId            String
+  user              User                    @relation(fields: [userId], references: [id])
+  // Personal Profile
+  firmName          String
+  fullAddress       String?                 @db.Text
+  firmType          String?
+  mobile            String?
+  telephone         String?
+  email             String?
+  // Partners
+  partner1Name      String?
+  partner1Address   String?                 @db.Text
+  partner2Name      String?
+  partner2Address   String?                 @db.Text
+  partner3Name      String?
+  partner3Address   String?                 @db.Text
+  residenceAddress  String?                 @db.Text
+  // Statutory Details
+  pan               String?
+  gst               String?
+  license           String?
+  udyam             String?
+  validity          String?
+  // Business Details
+  businessNature    String?
+  turnoverWholesaler String?
+  turnoverRetailer  String?
+  establishmentDate String?
+  // Financial Profile
+  bankName          String?
+  accountNo         String?
+  branch            String?
+  ifsc              String?
+  // Other Companies
+  company1Name      String?
+  company1Product   String?
+  company1Turnover  String?
+  company2Name      String?
+  company2Product   String?
+  company2Turnover  String?
+  company3Name      String?
+  company3Product   String?
+  company3Turnover  String?
+  // Security & Deposit
+  chequeNo1         String?
+  chequeNo2         String?
+  chequeNo3         String?
+  bankNameSecurity  String?
+  securityAmount    String?
+  rtgsDetails       String?
+  // Dealer Details
+  dealerPlace       String?
+  dealerDate        String?
+  remark            String?                 @db.Text
+  // File uploads (base64)
+  photo             String?                 @db.LongText
+  stamp             String?                 @db.LongText
+  cheque            String?                 @db.LongText
+  signature         String?                 @db.LongText
+  tsoSignature      String?                 @db.LongText
+  // Approval workflow
+  status            DealerApplicationStatus @default(pending)
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 }
 
 // ==================== STOCK UPDATE REQUESTS & NOTIFICATIONS ====================

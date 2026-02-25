@@ -4022,6 +4022,309 @@ app.post('/api/gps/update-distance', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// ==================== DEALER APPLICATIONS ====================
+
+// Get all dealer applications (role-based access)
+app.get('/api/dealer-applications', authMiddleware, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const where = {};
+
+    if (req.user.role === 'stock_manager' || req.user.role === 'account_manager') {
+      // Admin sees all
+    } else if (req.user.role === 'branch_manager') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (managedBranchId) {
+        const branchUserIds = await getBranchUserIds(managedBranchId);
+        where.userId = { in: branchUserIds };
+      } else {
+        where.userId = req.user.id;
+      }
+    } else {
+      where.userId = req.user.id;
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    const applications = await prisma.dealerApplication.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true, email: true, employeeCode: true, branchId: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(applications);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get dealer application by ID
+app.get('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const application = await prisma.dealerApplication.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, name: true, email: true, employeeCode: true, branchId: true } }
+      }
+    });
+
+    if (!application) {
+      return res.status(404).json({ error: 'Dealer application not found' });
+    }
+
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && application.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json(application);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create dealer application (any authenticated user)
+app.post('/api/dealer-applications', authMiddleware, async (req, res) => {
+  try {
+    const data = req.body;
+
+    const application = await prisma.dealerApplication.create({
+      data: {
+        userId: req.user.id,
+        firmName: data.firmName,
+        fullAddress: data.fullAddress,
+        firmType: data.firmType,
+        mobile: data.mobile,
+        telephone: data.telephone,
+        email: data.email,
+        partner1Name: data.partner1Name,
+        partner1Address: data.partner1Address,
+        partner2Name: data.partner2Name,
+        partner2Address: data.partner2Address,
+        partner3Name: data.partner3Name,
+        partner3Address: data.partner3Address,
+        residenceAddress: data.residenceAddress,
+        pan: data.pan,
+        gst: data.gst,
+        license: data.license,
+        udyam: data.udyam,
+        validity: data.validity,
+        businessNature: data.businessNature,
+        turnoverWholesaler: data.turnoverWholesaler,
+        turnoverRetailer: data.turnoverRetailer,
+        establishmentDate: data.establishmentDate,
+        bankName: data.bankName,
+        accountNo: data.accountNo,
+        branch: data.branch,
+        ifsc: data.ifsc,
+        company1Name: data.company1Name,
+        company1Product: data.company1Product,
+        company1Turnover: data.company1Turnover,
+        company2Name: data.company2Name,
+        company2Product: data.company2Product,
+        company2Turnover: data.company2Turnover,
+        company3Name: data.company3Name,
+        company3Product: data.company3Product,
+        company3Turnover: data.company3Turnover,
+        chequeNo1: data.chequeNo1,
+        chequeNo2: data.chequeNo2,
+        chequeNo3: data.chequeNo3,
+        bankNameSecurity: data.bankNameSecurity,
+        securityAmount: data.securityAmount,
+        rtgsDetails: data.rtgsDetails,
+        dealerPlace: data.dealerPlace,
+        dealerDate: data.dealerDate,
+        remark: data.remark,
+        photo: data.photo,
+        stamp: data.stamp,
+        cheque: data.cheque,
+        signature: data.signature,
+        tsoSignature: data.tsoSignature,
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, employeeCode: true, branchId: true } }
+      }
+    });
+
+    createAuditLog(req.user.id, 'CREATE', 'DealerApplication', application.id, null, { firmName: data.firmName }, req.ip);
+
+    res.status(201).json(application);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update dealer application (only pending, by owner)
+app.put('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = req.body;
+
+    const existing = await prisma.dealerApplication.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Dealer application not found' });
+    }
+
+    if (existing.userId !== req.user.id) {
+      return res.status(403).json({ error: 'Cannot edit other user\'s application' });
+    }
+
+    if (existing.status !== 'pending') {
+      return res.status(403).json({ error: 'Cannot edit approved/rejected application' });
+    }
+
+    const application = await prisma.dealerApplication.update({
+      where: { id },
+      data: {
+        firmName: data.firmName,
+        fullAddress: data.fullAddress,
+        firmType: data.firmType,
+        mobile: data.mobile,
+        telephone: data.telephone,
+        email: data.email,
+        partner1Name: data.partner1Name,
+        partner1Address: data.partner1Address,
+        partner2Name: data.partner2Name,
+        partner2Address: data.partner2Address,
+        partner3Name: data.partner3Name,
+        partner3Address: data.partner3Address,
+        residenceAddress: data.residenceAddress,
+        pan: data.pan,
+        gst: data.gst,
+        license: data.license,
+        udyam: data.udyam,
+        validity: data.validity,
+        businessNature: data.businessNature,
+        turnoverWholesaler: data.turnoverWholesaler,
+        turnoverRetailer: data.turnoverRetailer,
+        establishmentDate: data.establishmentDate,
+        bankName: data.bankName,
+        accountNo: data.accountNo,
+        branch: data.branch,
+        ifsc: data.ifsc,
+        company1Name: data.company1Name,
+        company1Product: data.company1Product,
+        company1Turnover: data.company1Turnover,
+        company2Name: data.company2Name,
+        company2Product: data.company2Product,
+        company2Turnover: data.company2Turnover,
+        company3Name: data.company3Name,
+        company3Product: data.company3Product,
+        company3Turnover: data.company3Turnover,
+        chequeNo1: data.chequeNo1,
+        chequeNo2: data.chequeNo2,
+        chequeNo3: data.chequeNo3,
+        bankNameSecurity: data.bankNameSecurity,
+        securityAmount: data.securityAmount,
+        rtgsDetails: data.rtgsDetails,
+        dealerPlace: data.dealerPlace,
+        dealerDate: data.dealerDate,
+        remark: data.remark,
+        photo: data.photo,
+        stamp: data.stamp,
+        cheque: data.cheque,
+        signature: data.signature,
+        tsoSignature: data.tsoSignature,
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, employeeCode: true, branchId: true } }
+      }
+    });
+
+    res.json(application);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete dealer application (pending by owner, or admin)
+app.delete('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await prisma.dealerApplication.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Dealer application not found' });
+    }
+
+    if (existing.userId !== req.user.id && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+      return res.status(403).json({ error: 'Cannot delete other user\'s application' });
+    }
+
+    if (existing.status !== 'pending' && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+      return res.status(403).json({ error: 'Cannot delete approved/rejected application' });
+    }
+
+    await prisma.dealerApplication.delete({ where: { id } });
+    res.json({ message: 'Dealer application deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Approve dealer application (stock_manager/account_manager only)
+app.put('/api/dealer-applications/:id/approve', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+
+    const application = await prisma.dealerApplication.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        approvedBy: req.user.id,
+        approvedAt: new Date()
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, employeeCode: true, branchId: true } }
+      }
+    });
+
+    createAuditLog(req.user.id, 'APPROVE', 'DealerApplication', id, null, { firmName: application.firmName }, req.ip);
+
+    res.json(application);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reject dealer application (stock_manager/account_manager only)
+app.put('/api/dealer-applications/:id/reject', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    const { rejectionReason } = req.body;
+
+    const application = await prisma.dealerApplication.update({
+      where: { id },
+      data: {
+        status: 'rejected',
+        rejectionReason: rejectionReason || 'No reason provided',
+        approvedBy: req.user.id,
+        approvedAt: new Date()
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, employeeCode: true, branchId: true } }
+      }
+    });
+
+    createAuditLog(req.user.id, 'REJECT', 'DealerApplication', id, null, { firmName: application.firmName, reason: rejectionReason }, req.ip);
+
+    res.json(application);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Helper function to calculate distance between two GPS points (Haversine formula)
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth's radius in km

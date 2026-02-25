@@ -374,6 +374,77 @@ export interface Expenditure {
   updatedAt?: Date;
 }
 
+// Dealer Application status
+export type DealerApplicationStatus = 'pending' | 'approved' | 'rejected';
+
+// Dealer Application interface
+export interface DealerApplication {
+  id: string;
+  userId: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    employeeCode?: string;
+    branchId?: string;
+  };
+  firmName: string;
+  fullAddress?: string;
+  firmType?: string;
+  mobile?: string;
+  telephone?: string;
+  email?: string;
+  partner1Name?: string;
+  partner1Address?: string;
+  partner2Name?: string;
+  partner2Address?: string;
+  partner3Name?: string;
+  partner3Address?: string;
+  residenceAddress?: string;
+  pan?: string;
+  gst?: string;
+  license?: string;
+  udyam?: string;
+  validity?: string;
+  businessNature?: string;
+  turnoverWholesaler?: string;
+  turnoverRetailer?: string;
+  establishmentDate?: string;
+  bankName?: string;
+  accountNo?: string;
+  branch?: string;
+  ifsc?: string;
+  company1Name?: string;
+  company1Product?: string;
+  company1Turnover?: string;
+  company2Name?: string;
+  company2Product?: string;
+  company2Turnover?: string;
+  company3Name?: string;
+  company3Product?: string;
+  company3Turnover?: string;
+  chequeNo1?: string;
+  chequeNo2?: string;
+  chequeNo3?: string;
+  bankNameSecurity?: string;
+  securityAmount?: string;
+  rtgsDetails?: string;
+  dealerPlace?: string;
+  dealerDate?: string;
+  remark?: string;
+  photo?: string;
+  stamp?: string;
+  cheque?: string;
+  signature?: string;
+  tsoSignature?: string;
+  status: DealerApplicationStatus;
+  approvedBy?: string;
+  approvedAt?: Date;
+  rejectionReason?: string;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
 // Stock Update Request
 export type StockRequestType = 'update_quantity' | 'add_product';
 
