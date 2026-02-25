@@ -63,6 +63,16 @@ export function DealerApplication() {
     reader.readAsDataURL(file);
   };
 
+  const signUploadRef = useRef<HTMLInputElement>(null);
+  const tsoUploadRef = useRef<HTMLInputElement>(null);
+
+  const onSignatureUpload = (file: File | undefined, setter: (v: string) => void) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setter(String(reader.result));
+    reader.readAsDataURL(file);
+  };
+
   // ---- Dealer signature helpers ----
   const clearSignature = () => {
     const canvas = signCanvasRef.current;
@@ -233,37 +243,57 @@ export function DealerApplication() {
         {/* Dealer Signature */}
         <div className="form-group" style={{ marginTop: 12 }}>
           <label className="form-label">Dealer Signature *</label>
-          <div style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: 6, background: '#fff' }}>
-            <canvas ref={signCanvasRef} width={700} height={120}
-              style={{ width: '100%', height: 120, cursor: 'crosshair', display: 'block' }}
-              onMouseDown={e => { setDrawing(true); startOnCanvas(signCanvasRef.current, e); }}
-              onMouseMove={e => drawOnCanvas(signCanvasRef.current, e, drawing, setSignature)}
-              onMouseUp={() => { stopOnCanvas(signCanvasRef.current); setDrawing(false); }}
-              onMouseLeave={() => { stopOnCanvas(signCanvasRef.current); setDrawing(false); }}
-              onTouchStart={e => touchStartOnCanvas(signCanvasRef.current, e, setDrawing)}
-              onTouchMove={e => touchMoveOnCanvas(signCanvasRef.current, e, drawing, setSignature)}
-              onTouchEnd={() => { stopOnCanvas(signCanvasRef.current); setDrawing(false); }}
-            />
+          {signature && !drawing ? (
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: 6, background: '#fff' }}>
+              <img src={signature} alt="Dealer Signature" style={{ maxHeight: 120, display: 'block' }} />
+            </div>
+          ) : (
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: 6, background: '#fff' }}>
+              <canvas ref={signCanvasRef} width={700} height={120}
+                style={{ width: '100%', height: 120, cursor: 'crosshair', display: 'block' }}
+                onMouseDown={e => { setDrawing(true); startOnCanvas(signCanvasRef.current, e); }}
+                onMouseMove={e => drawOnCanvas(signCanvasRef.current, e, drawing, setSignature)}
+                onMouseUp={() => { stopOnCanvas(signCanvasRef.current); setDrawing(false); }}
+                onMouseLeave={() => { stopOnCanvas(signCanvasRef.current); setDrawing(false); }}
+                onTouchStart={e => touchStartOnCanvas(signCanvasRef.current, e, setDrawing)}
+                onTouchMove={e => touchMoveOnCanvas(signCanvasRef.current, e, drawing, setSignature)}
+                onTouchEnd={() => { stopOnCanvas(signCanvasRef.current); setDrawing(false); }}
+              />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <button className="btn btn-secondary btn-sm" onClick={clearSignature}><Eraser size={14} /> Clear</button>
+            <input ref={signUploadRef} type="file" accept="image/*" hidden onChange={e => { onSignatureUpload(e.target.files?.[0], setSignature); e.target.value = ''; }} />
+            <button className="btn btn-secondary btn-sm" onClick={() => signUploadRef.current?.click()}><Upload size={14} /> Upload</button>
           </div>
-          <button className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={clearSignature}><Eraser size={14} /> Clear</button>
         </div>
 
         {/* TSO Signature */}
         <div className="form-group" style={{ marginTop: 12 }}>
           <label className="form-label">Territory Sales Officer / Area Sales Officer Signature *</label>
-          <div style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: 6, background: '#fff' }}>
-            <canvas ref={tsoCanvasRef} width={700} height={120}
-              style={{ width: '100%', height: 120, cursor: 'crosshair', display: 'block' }}
-              onMouseDown={e => { setTsoDrawing(true); startOnCanvas(tsoCanvasRef.current, e); }}
-              onMouseMove={e => drawOnCanvas(tsoCanvasRef.current, e, tsoDrawing, setTsoSignature)}
-              onMouseUp={() => { stopOnCanvas(tsoCanvasRef.current); setTsoDrawing(false); }}
-              onMouseLeave={() => { stopOnCanvas(tsoCanvasRef.current); setTsoDrawing(false); }}
-              onTouchStart={e => touchStartOnCanvas(tsoCanvasRef.current, e, setTsoDrawing)}
-              onTouchMove={e => touchMoveOnCanvas(tsoCanvasRef.current, e, tsoDrawing, setTsoSignature)}
-              onTouchEnd={() => { stopOnCanvas(tsoCanvasRef.current); setTsoDrawing(false); }}
-            />
+          {tsoSignature && !tsoDrawing ? (
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: 6, background: '#fff' }}>
+              <img src={tsoSignature} alt="TSO Signature" style={{ maxHeight: 120, display: 'block' }} />
+            </div>
+          ) : (
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: 6, background: '#fff' }}>
+              <canvas ref={tsoCanvasRef} width={700} height={120}
+                style={{ width: '100%', height: 120, cursor: 'crosshair', display: 'block' }}
+                onMouseDown={e => { setTsoDrawing(true); startOnCanvas(tsoCanvasRef.current, e); }}
+                onMouseMove={e => drawOnCanvas(tsoCanvasRef.current, e, tsoDrawing, setTsoSignature)}
+                onMouseUp={() => { stopOnCanvas(tsoCanvasRef.current); setTsoDrawing(false); }}
+                onMouseLeave={() => { stopOnCanvas(tsoCanvasRef.current); setTsoDrawing(false); }}
+                onTouchStart={e => touchStartOnCanvas(tsoCanvasRef.current, e, setTsoDrawing)}
+                onTouchMove={e => touchMoveOnCanvas(tsoCanvasRef.current, e, tsoDrawing, setTsoSignature)}
+                onTouchEnd={() => { stopOnCanvas(tsoCanvasRef.current); setTsoDrawing(false); }}
+              />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <button className="btn btn-secondary btn-sm" onClick={clearTsoSignature}><Eraser size={14} /> Clear</button>
+            <input ref={tsoUploadRef} type="file" accept="image/*" hidden onChange={e => { onSignatureUpload(e.target.files?.[0], setTsoSignature); e.target.value = ''; }} />
+            <button className="btn btn-secondary btn-sm" onClick={() => tsoUploadRef.current?.click()}><Upload size={14} /> Upload</button>
           </div>
-          <button className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={clearTsoSignature}><Eraser size={14} /> Clear</button>
         </div>
       </div>
 

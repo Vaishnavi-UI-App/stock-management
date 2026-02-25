@@ -97,14 +97,33 @@ export function Layout({ children }: LayoutProps) {
       ];
     }
 
+    if (currentUser?.role === 'account_manager') {
+      return [
+        ...baseItems,
+        { path: '/my-attendance', icon: Clock, label: 'Attendance' },
+        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
+        { path: '/expenditures', icon: Receipt, label: 'Expenditures' },
+        { path: '/accounts', icon: Calculator, label: 'Accounts' },
+        { path: '/customer-ledger', icon: Wallet, label: 'Customer Ledger' },
+        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
+        { path: '/attendance-management', icon: Clock, label: 'Attendance Mgmt' },
+        { path: '/damage-tracking', icon: Trash2, label: 'Damage Tracking' },
+        { path: '/leave-management', icon: CalendarDays, label: 'Leave Mgmt' },
+        { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/payroll', icon: DollarSign, label: 'Payroll' },
+        { path: '/gst-reports', icon: FileText, label: 'GST Reports' },
+        { path: '/all-sales', icon: ShoppingCart, label: 'All Sales' },
+        { path: '/reports', icon: BarChart3, label: 'Reports' },
+      ];
+    }
+
     if (currentUser?.role === 'branch_manager') {
       return [
         ...baseItems,
         { path: '/branch-inventory', icon: Package, label: 'Branch Inventory' },
         { path: '/all-branch-stock', icon: Truck, label: 'All Branch Stock' },
         { path: '/stock-requests', icon: ClipboardList, label: 'Stock Requests' },
-        { path: '/branch-orders', icon: ShoppingBag, label: 'Orders' },
-        { path: '/branch-attendance', icon: Clock, label: 'Attendance Mgmt' },
+        { path: '/my-attendance', icon: Clock, label: 'Attendance' },
         { path: '/branch-expenditures', icon: Receipt, label: 'Expenditures' },
         { path: '/branch-leaves', icon: CalendarDays, label: 'Leave Mgmt' },
         { path: '/branch-damages', icon: Trash2, label: 'Damage Tracking' },
@@ -188,6 +207,7 @@ export function Layout({ children }: LayoutProps) {
             <span className="user-name">{currentUser?.name}</span>
             <span className="user-role">
               {currentUser?.role === 'stock_manager' && 'Stock Manager'}
+              {currentUser?.role === 'account_manager' && 'Account Manager'}
               {currentUser?.role === 'branch_manager' && 'Branch Manager'}
               {currentUser?.role === 'salesman' && 'Salesman'}
             </span>

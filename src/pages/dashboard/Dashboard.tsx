@@ -56,7 +56,7 @@ export function Dashboard() {
   });
 
   useEffect(() => {
-    if (role === 'stock_manager') {
+    if (role === 'stock_manager' || role === 'account_manager') {
       paymentsApi.getSummary()
         .then(data => setPaymentSummary(data))
         .catch(err => console.error('Failed to fetch payment summary:', err));
@@ -106,6 +106,40 @@ export function Dashboard() {
         },
         {
           label: 'Total Sales',
+          value: `₹${totalSalesAmount.toLocaleString()}`,
+          icon: IndianRupee,
+          color: '#06b6d4',
+          bgColor: 'rgba(6, 182, 212, 0.1)',
+        },
+        {
+          label: 'This Month',
+          value: `₹${thisMonthAmount.toLocaleString()}`,
+          icon: TrendingUp,
+          color: '#ec4899',
+          bgColor: 'rgba(236, 72, 153, 0.1)',
+        },
+      ];
+    }
+
+    if (role === 'account_manager') {
+      const totalSalesAmount = sales.reduce((sum, s) => sum + s.finalAmount, 0);
+      const thisMonthSales = sales.filter(s => {
+        const saleDate = new Date(s.saleDate);
+        const now = new Date();
+        return saleDate.getMonth() === now.getMonth() && saleDate.getFullYear() === now.getFullYear();
+      });
+      const thisMonthAmount = thisMonthSales.reduce((sum, s) => sum + s.finalAmount, 0);
+
+      return [
+        {
+          label: 'Total Sales',
+          value: sales.length,
+          icon: ShoppingCart,
+          color: '#2563eb',
+          bgColor: 'rgba(37, 99, 235, 0.1)',
+        },
+        {
+          label: 'Revenue',
           value: `₹${totalSalesAmount.toLocaleString()}`,
           icon: IndianRupee,
           color: '#06b6d4',
@@ -363,7 +397,7 @@ export function Dashboard() {
         )}
       </div>
 
-      {role === 'stock_manager' && (
+      {(role === 'stock_manager' || role === 'account_manager') && (
         <>
         {/* Payment Summary Section */}
         <div className="stats-grid" style={{ marginTop: '24px' }}>

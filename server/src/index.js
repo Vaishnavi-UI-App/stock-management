@@ -2130,7 +2130,7 @@ app.get('/api/expenditures', authMiddleware, async (req, res) => {
     const where = {};
 
     // Non-admin users can only see their own expenditures
-    if (req.user.role === 'stock_manager') {
+    if (req.user.role === 'stock_manager' || req.user.role === 'account_manager') {
       if (userId) where.userId = userId;
     } else if (req.user.role === 'branch_manager') {
       const managedBranchId = await getManagedBranchId(req.user.id);
@@ -2194,7 +2194,7 @@ app.get('/api/expenditures/:id', authMiddleware, async (req, res) => {
     }
 
     // Non-admin can only view their own expenditures
-    if (req.user.role !== 'stock_manager' && expenditure.userId !== req.user.id) {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && expenditure.userId !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -2280,11 +2280,11 @@ app.delete('/api/expenditures/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Expenditure not found' });
     }
 
-    if (existing.userId !== req.user.id && req.user.role !== 'stock_manager') {
+    if (existing.userId !== req.user.id && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
       return res.status(403).json({ error: 'Cannot delete other user\'s expenditure' });
     }
 
-    if (existing.status !== 'pending' && req.user.role !== 'stock_manager') {
+    if (existing.status !== 'pending' && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
       return res.status(403).json({ error: 'Cannot delete approved/rejected expenditure' });
     }
 
@@ -2295,10 +2295,10 @@ app.delete('/api/expenditures/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Approve expenditure (Admin + Branch Manager)
+// Approve expenditure (Admin + Account Manager + Branch Manager)
 app.put('/api/expenditures/:id/approve', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (req.user.role === 'branch_manager') {
@@ -2331,10 +2331,10 @@ app.put('/api/expenditures/:id/approve', authMiddleware, async (req, res) => {
   }
 });
 
-// Reject expenditure (Admin + Branch Manager)
+// Reject expenditure (Admin + Account Manager + Branch Manager)
 app.put('/api/expenditures/:id/reject', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (req.user.role === 'branch_manager') {
@@ -2663,10 +2663,10 @@ app.get('/api/attendance/my-history', authMiddleware, async (req, res) => {
   }
 });
 
-// Get all attendance (Admin + Branch Manager)
+// Get all attendance (Admin + Account Manager + Branch Manager)
 app.get('/api/attendance/all', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -2710,10 +2710,10 @@ app.get('/api/attendance/all', authMiddleware, async (req, res) => {
   }
 });
 
-// Get pending attendance approvals (Admin + Branch Manager)
+// Get pending attendance approvals (Admin + Account Manager + Branch Manager)
 app.get('/api/attendance/pending', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     const where = { approvalStatus: 'pending' };
@@ -2738,10 +2738,10 @@ app.get('/api/attendance/pending', authMiddleware, async (req, res) => {
   }
 });
 
-// Approve attendance (Admin + Branch Manager)
+// Approve attendance (Admin + Account Manager + Branch Manager)
 app.put('/api/attendance/:id/approve', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (req.user.role === 'branch_manager') {
@@ -2773,10 +2773,10 @@ app.put('/api/attendance/:id/approve', authMiddleware, async (req, res) => {
   }
 });
 
-// Reject attendance (Admin + Branch Manager)
+// Reject attendance (Admin + Account Manager + Branch Manager)
 app.put('/api/attendance/:id/reject', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (req.user.role === 'branch_manager') {
@@ -2811,10 +2811,10 @@ app.put('/api/attendance/:id/reject', authMiddleware, async (req, res) => {
   }
 });
 
-// Get attendance summary (Admin + Branch Manager)
+// Get attendance summary (Admin + Account Manager + Branch Manager)
 app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -2979,7 +2979,7 @@ app.put('/api/products/:id/reorder-point', authMiddleware, async (req, res) => {
 app.post('/api/payroll/generate', authMiddleware, async (req, res) => {
   try {
     const { month, year } = req.body;
-    const employees = await prisma.user.findMany({ where: { role: { not: 'stock_manager' } } });
+    const employees = await prisma.user.findMany({ where: { role: { notIn: ['stock_manager', 'account_manager'] } } });
     const daysInMonth = new Date(year, month, 0).getDate();
     const payroll = [];
 
@@ -3188,7 +3188,7 @@ app.get('/api/reports/daily-collection', authMiddleware, async (req, res) => {
 app.get('/api/leaves', authMiddleware, async (req, res) => {
   try {
     let where = {};
-    if (req.user.role === 'stock_manager') {
+    if (req.user.role === 'stock_manager' || req.user.role === 'account_manager') {
       where = {};
     } else if (req.user.role === 'branch_manager') {
       const managedBranchId = await getManagedBranchId(req.user.id);
@@ -3225,7 +3225,7 @@ app.post('/api/leaves', authMiddleware, async (req, res) => {
 
 app.put('/api/leaves/:id/approve', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (req.user.role === 'branch_manager') {
@@ -3248,7 +3248,7 @@ app.put('/api/leaves/:id/approve', authMiddleware, async (req, res) => {
 
 app.put('/api/leaves/:id/reject', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     if (req.user.role === 'branch_manager') {
@@ -3299,7 +3299,7 @@ app.post('/api/damages', authMiddleware, async (req, res) => {
 
 app.put('/api/damages/:id/approve', authMiddleware, async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
       return res.status(403).json({ error: 'Unauthorized' });
     }
     const damage = await prisma.damageRecord.findUnique({ where: { id: req.params.id } });

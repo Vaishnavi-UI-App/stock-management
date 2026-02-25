@@ -186,7 +186,7 @@ export function Users() {
       password: plainPassword,
       phone: formData.phone,
       role: formData.role,
-      branchId: formData.role !== 'stock_manager' ? formData.branchId : undefined,
+      branchId: formData.role !== 'stock_manager' && formData.role !== 'account_manager' ? formData.branchId : undefined,
       profilePhoto: formData.profilePhoto || undefined,
       employeeCode: formData.employeeCode || undefined,
       aadharCard: formData.aadharCard || undefined,
@@ -258,6 +258,7 @@ export function Users() {
   const getRoleBadgeClass = (role: UserRole) => {
     switch (role) {
       case 'stock_manager': return 'badge-primary';
+      case 'account_manager': return 'badge-info';
       case 'branch_manager': return 'badge-success';
       case 'salesman': return 'badge-warning';
       default: return 'badge-primary';
@@ -267,6 +268,7 @@ export function Users() {
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
       case 'stock_manager': return 'Stock Manager';
+      case 'account_manager': return 'Account Manager';
       case 'branch_manager': return 'Branch Manager';
       case 'salesman': return 'Salesman';
       default: return role;
@@ -310,6 +312,7 @@ export function Users() {
         >
           <option value="">All Roles</option>
           <option value="stock_manager">Stock Manager</option>
+          <option value="account_manager">Account Manager</option>
           <option value="branch_manager">Branch Manager</option>
           <option value="salesman">Salesman</option>
         </select>
@@ -589,10 +592,11 @@ export function Users() {
                     >
                       <option value="salesman">Salesman</option>
                       <option value="branch_manager">Branch Manager</option>
+                      <option value="account_manager">Account Manager</option>
                       <option value="stock_manager">Stock Manager</option>
                     </select>
                   </div>
-                  {formData.role !== 'stock_manager' && (
+                  {formData.role !== 'stock_manager' && formData.role !== 'account_manager' && (
                     <div className="form-group">
                       <label className="form-label">Branch</label>
                       <select

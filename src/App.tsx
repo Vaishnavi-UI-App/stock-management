@@ -144,7 +144,7 @@ function App() {
         <Route
           path="/all-sales"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
+            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}>
               <AllSales />
             </ProtectedRoute>
           }
@@ -152,7 +152,7 @@ function App() {
         <Route
           path="/accounts"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
+            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}>
               <Accounts />
             </ProtectedRoute>
           }
@@ -160,7 +160,7 @@ function App() {
         <Route
           path="/customer-ledger"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
+            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}>
               <CustomerLedger />
             </ProtectedRoute>
           }
@@ -176,7 +176,7 @@ function App() {
         <Route
           path="/expenditures"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}>
+            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}>
               <Expenditures />
             </ProtectedRoute>
           }
@@ -192,23 +192,23 @@ function App() {
         <Route
           path="/attendance-management"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}>
+            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}>
               <AttendanceManagement />
             </ProtectedRoute>
           }
         />
 
         {/* New Feature Routes - Stock Manager */}
-        <Route path="/gst-reports" element={<ProtectedRoute allowedRoles={['stock_manager']}><GSTReports /></ProtectedRoute>} />
+        <Route path="/gst-reports" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}><GSTReports /></ProtectedRoute>} />
         <Route path="/sales-returns" element={<ProtectedRoute allowedRoles={['stock_manager']}><SalesReturns /></ProtectedRoute>} />
         <Route path="/stock-alerts" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><StockAlerts /></ProtectedRoute>} />
-        <Route path="/payroll" element={<ProtectedRoute allowedRoles={['stock_manager']}><PayrollProcessing /></ProtectedRoute>} />
+        <Route path="/payroll" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}><PayrollProcessing /></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><Notifications /></ProtectedRoute>} />
         <Route path="/expiry-tracking" element={<ProtectedRoute allowedRoles={['stock_manager']}><ExpiryTracking /></ProtectedRoute>} />
         <Route path="/purchases" element={<ProtectedRoute allowedRoles={['stock_manager']}><PurchaseManagement /></ProtectedRoute>} />
         <Route path="/language-settings" element={<ProtectedRoute><LanguageSettings /></ProtectedRoute>} />
-        <Route path="/leave-management" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><LeaveManagement /></ProtectedRoute>} />
-        <Route path="/damage-tracking" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><DamageTracking /></ProtectedRoute>} />
+        <Route path="/leave-management" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}><LeaveManagement /></ProtectedRoute>} />
+        <Route path="/damage-tracking" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}><DamageTracking /></ProtectedRoute>} />
         <Route path="/audit-log" element={<ProtectedRoute allowedRoles={['stock_manager']}><AuditLog /></ProtectedRoute>} />
         <Route path="/route-tracking" element={<ProtectedRoute allowedRoles={['stock_manager']}><RouteTracking /></ProtectedRoute>} />
         <Route path="/stock-requests" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><StockUpdateRequests /></ProtectedRoute>} />

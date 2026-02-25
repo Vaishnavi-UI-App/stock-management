@@ -1,5 +1,5 @@
 // User roles
-export type UserRole = 'stock_manager' | 'branch_manager' | 'salesman';
+export type UserRole = 'stock_manager' | 'account_manager' | 'branch_manager' | 'salesman';
 
 // User interface
 export interface User {

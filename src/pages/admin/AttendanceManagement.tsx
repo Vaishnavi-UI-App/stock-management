@@ -259,7 +259,7 @@ export function AttendanceManagement() {
     if (!printWindow || !slipData) return;
     const { emp, presentDays, halfDays, lateDays, totalWorkingDays, totalHours, lopDays, daysInMonth: slipDaysInMonth, customName, customDesignation } = slipData;
     const name = emp?.name || customName || 'N/A';
-    const designation = emp?.designation || customDesignation || (emp?.role === 'salesman' ? 'Salesman' : emp?.role === 'branch_manager' ? 'Branch Manager' : emp?.role === 'stock_manager' ? 'Stock Manager' : 'N/A');
+    const designation = emp?.designation || customDesignation || (emp?.role === 'salesman' ? 'Salesman' : emp?.role === 'branch_manager' ? 'Branch Manager' : emp?.role === 'account_manager' ? 'Account Manager' : emp?.role === 'stock_manager' ? 'Stock Manager' : 'N/A');
     const panNumber = emp?.panCard || 'N/A';
     const empLocation = emp?.location || orgData?.city || 'Pune';
     const daysInMonth = slipDaysInMonth || new Date(slipYear, slipMonth, 0).getDate();
