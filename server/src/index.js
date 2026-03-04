@@ -122,8 +122,54 @@ app.post('/api/users', authMiddleware, async (req, res) => {
   try {
     const { password, ...userData } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Only allow known User model fields
+    const allowedFields = [
+      'name', 'email', 'phone', 'role', 'branchId',
+      'profilePhoto', 'employeeCode', 'aadharCard', 'aadharCardDoc',
+      'panCard', 'panCardDoc', 'bloodGroup', 'emergencyContact',
+      'monthlySalary', 'bankName', 'bankAccountNo', 'bankAccountHolder',
+      'bankIfscCode', 'bankBranchName', 'bankPassbookDoc',
+      'dateOfJoining', 'pfNo', 'esicNo', 'uanNo', 'licenseNo',
+      'medicalInsurance', 'designation', 'location',
+      'basicSalary', 'houseRentAllowance', 'conveyanceAllowance',
+      'medicalAllowance', 'uniformAllowance', 'educationAllowance',
+      'ltaAllowance', 'specialAllowance', 'pfDeduction'
+    ];
+
+    const validRoles = ['stock_manager', 'account_manager', 'branch_manager', 'salesman'];
+
+    const cleanData = {};
+    for (const [key, value] of Object.entries(userData)) {
+      if (!allowedFields.includes(key)) continue;
+      if (value === '' || value === undefined || value === null) {
+        continue; // skip empty — let DB use defaults/null
+      }
+      cleanData[key] = value;
+    }
+
+    // Validate role
+    if (!cleanData.role || !validRoles.includes(cleanData.role)) {
+      return res.status(400).json({ error: `Invalid role: ${cleanData.role || 'none'}` });
+    }
+
+    // Convert dateOfJoining string to Date if present
+    if (cleanData.dateOfJoining) {
+      cleanData.dateOfJoining = new Date(cleanData.dateOfJoining);
+    }
+
+    // Convert numeric fields from string if needed
+    const numericFields = ['monthlySalary', 'basicSalary', 'houseRentAllowance', 'conveyanceAllowance',
+      'medicalAllowance', 'uniformAllowance', 'educationAllowance', 'ltaAllowance', 'specialAllowance', 'pfDeduction'];
+    for (const field of numericFields) {
+      if (cleanData[field] !== undefined && cleanData[field] !== null) {
+        const num = parseFloat(cleanData[field]);
+        cleanData[field] = isNaN(num) ? undefined : num;
+      }
+    }
+
     const user = await prisma.user.create({
-      data: { ...userData, password: hashedPassword },
+      data: { ...cleanData, password: hashedPassword },
       include: { branch: true }
     });
     const { password: _, ...userWithoutPassword } = user;
@@ -133,6 +179,9 @@ app.post('/api/users', authMiddleware, async (req, res) => {
 
     res.status(201).json(userWithoutPassword);
   } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: `A user with this ${error.meta?.target?.[0] || 'value'} already exists` });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -143,14 +192,62 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { password, ...userData } = req.body;
 
-    const updateData = { ...userData };
+    // Only allow known User model fields
+    const allowedFields = [
+      'name', 'email', 'phone', 'role', 'branchId',
+      'profilePhoto', 'employeeCode', 'aadharCard', 'aadharCardDoc',
+      'panCard', 'panCardDoc', 'bloodGroup', 'emergencyContact',
+      'monthlySalary', 'bankName', 'bankAccountNo', 'bankAccountHolder',
+      'bankIfscCode', 'bankBranchName', 'bankPassbookDoc',
+      'dateOfJoining', 'pfNo', 'esicNo', 'uanNo', 'licenseNo',
+      'medicalInsurance', 'designation', 'location',
+      'basicSalary', 'houseRentAllowance', 'conveyanceAllowance',
+      'medicalAllowance', 'uniformAllowance', 'educationAllowance',
+      'ltaAllowance', 'specialAllowance', 'pfDeduction'
+    ];
+
+    const validRoles = ['stock_manager', 'account_manager', 'branch_manager', 'salesman'];
+
+    const cleanData = {};
+    for (const [key, value] of Object.entries(userData)) {
+      if (!allowedFields.includes(key)) continue;
+      if (value === '' || value === undefined || value === null) {
+        // For required fields skip empty, for optional set null to clear
+        if (!['name', 'email', 'phone', 'role'].includes(key)) {
+          cleanData[key] = null;
+        }
+        continue;
+      }
+      cleanData[key] = value;
+    }
+
+    // Validate role
+    if (cleanData.role && !validRoles.includes(cleanData.role)) {
+      return res.status(400).json({ error: `Invalid role: ${cleanData.role}` });
+    }
+
+    // Convert dateOfJoining string to Date if present
+    if (cleanData.dateOfJoining) {
+      cleanData.dateOfJoining = new Date(cleanData.dateOfJoining);
+    }
+
+    // Convert numeric fields
+    const numericFields = ['monthlySalary', 'basicSalary', 'houseRentAllowance', 'conveyanceAllowance',
+      'medicalAllowance', 'uniformAllowance', 'educationAllowance', 'ltaAllowance', 'specialAllowance', 'pfDeduction'];
+    for (const field of numericFields) {
+      if (cleanData[field] !== undefined && cleanData[field] !== null) {
+        const num = parseFloat(cleanData[field]);
+        cleanData[field] = isNaN(num) ? null : num;
+      }
+    }
+
     if (password) {
-      updateData.password = await bcrypt.hash(password, 10);
+      cleanData.password = await bcrypt.hash(password, 10);
     }
 
     const user = await prisma.user.update({
       where: { id },
-      data: updateData,
+      data: cleanData,
       include: { branch: true }
     });
     const { password: _, ...userWithoutPassword } = user;
@@ -160,6 +257,9 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
 
     res.json(userWithoutPassword);
   } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: `A user with this ${error.meta?.target?.[0] || 'value'} already exists` });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -918,8 +1018,8 @@ app.get('/api/sales/:id', authMiddleware, async (req, res) => {
 // Get pending sales for approval (Admin only)
 app.get('/api/sales/pending/all', authMiddleware, async (req, res) => {
   try {
-    // Check if user is stock_manager (admin)
-    if (req.user.role !== 'stock_manager') {
+    // Check if user is stock_manager or account_manager (admin)
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
       return res.status(403).json({ error: 'Only admin can view pending bills' });
     }
 
@@ -941,8 +1041,8 @@ app.get('/api/sales/pending/all', authMiddleware, async (req, res) => {
 // Approve sale (Admin only)
 app.put('/api/sales/:id/approve', authMiddleware, async (req, res) => {
   try {
-    // Check if user is stock_manager (admin)
-    if (req.user.role !== 'stock_manager') {
+    // Check if user is stock_manager or account_manager (admin)
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
       return res.status(403).json({ error: 'Only admin can approve bills' });
     }
 
@@ -973,8 +1073,8 @@ app.put('/api/sales/:id/approve', authMiddleware, async (req, res) => {
 // Reject sale (Admin only)
 app.put('/api/sales/:id/reject', authMiddleware, async (req, res) => {
   try {
-    // Check if user is stock_manager (admin)
-    if (req.user.role !== 'stock_manager') {
+    // Check if user is stock_manager or account_manager (admin)
+    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
       return res.status(403).json({ error: 'Only admin can reject bills' });
     }
 
@@ -1021,7 +1121,7 @@ app.put('/api/sales/:id', authMiddleware, async (req, res) => {
     }
 
     // Only allow editing pending sales
-    if (existingSale.status !== 'pending' && req.user.role !== 'stock_manager') {
+    if (existingSale.status !== 'pending' && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
       return res.status(403).json({ error: 'Cannot edit approved/rejected sales' });
     }
 
