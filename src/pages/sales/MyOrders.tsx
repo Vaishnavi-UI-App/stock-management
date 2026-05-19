@@ -433,6 +433,10 @@ export function MyOrders() {
               <Download size={18} />
               Download PDF
             </button>
+            <button className="btn btn-success" onClick={handleShareWhatsApp} style={{ background: '#25D366', borderColor: '#25D366' }}>
+              <Share2 size={18} />
+              Share
+            </button>
             <button className="btn btn-secondary" onClick={() => { setShowOrderDetail(false); setSelectedOrder(null); }}>
               Back to List
             </button>

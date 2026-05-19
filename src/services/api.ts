@@ -239,6 +239,11 @@ export const salesApi = {
 export const customersApi = {
   getAll: () => apiRequest<any[]>('/customers'),
 
+  search: (q: string, limit = 10) => {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    return apiRequest<any[]>(`/customers?${params.toString()}`);
+  },
+
   getById: (id: string) => apiRequest<any>(`/customers/${id}`),
 
   getByPhone: (phone: string) => apiRequest<any>(`/customers/phone/${phone}`),
@@ -895,4 +900,69 @@ export const notificationsApi = {
 
   getUnreadCount: () =>
     apiRequest<{ count: number }>('/notifications/unread-count'),
+};
+
+// ==================== CHAT API ====================
+
+export type ChatConversationType = 'direct' | 'group' | 'broadcast';
+
+export interface ChatUser {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
+  branchId?: string | null;
+  employeeCode?: string | null;
+  profilePhoto?: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+  sender?: ChatUser;
+}
+
+export interface ChatConversation {
+  id: string;
+  type: ChatConversationType;
+  name?: string | null;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt?: string | null;
+  participants: Array<{ id: string; conversationId: string; userId: string; user?: ChatUser; lastReadAt?: string | null }>;
+  messages?: ChatMessage[];
+  unreadCount?: number;
+}
+
+export const chatApi = {
+  listUsers: () => apiRequest<ChatUser[]>('/chat/users'),
+
+  listConversations: () => apiRequest<ChatConversation[]>('/chat/conversations'),
+
+  createConversation: (body: { type: ChatConversationType; name?: string; participantIds?: string[] }) =>
+    apiRequest<ChatConversation>('/chat/conversations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listMessages: (conversationId: string, opts?: { before?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.before) params.append('before', opts.before);
+    if (opts?.limit) params.append('limit', String(opts.limit));
+    const query = params.toString();
+    return apiRequest<ChatMessage[]>(`/chat/conversations/${conversationId}/messages${query ? `?${query}` : ''}`);
+  },
+
+  sendMessage: (conversationId: string, content: string) =>
+    apiRequest<ChatMessage>(`/chat/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+
+  markRead: (conversationId: string) =>
+    apiRequest<{ success: boolean }>(`/chat/conversations/${conversationId}/read`, { method: 'POST' }),
 };

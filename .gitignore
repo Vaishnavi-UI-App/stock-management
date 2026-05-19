@@ -10,8 +10,14 @@ lerna-debug.log*
 node_modules
 dist
 .env
+.env.docker
+.env.*.local
 dist-ssr
 *.local
+
+# Editor / tooling state
+.claude/
+nul
 
 # Editor directories and files
 .vscode/*

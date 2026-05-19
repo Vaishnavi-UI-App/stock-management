@@ -321,6 +321,9 @@ export const useStore = create<AppState>()(
         try {
           const newProduct = await productsApi.create(productData);
           set(state => ({ products: [...state.products, newProduct], isLoading: false }));
+          // Refresh Company Stock so the new product appears on that page
+          // (backend auto-creates a zero-quantity CompanyStock row).
+          await get().fetchCompanyStock();
         } catch (error: any) {
           set({ error: error.message, isLoading: false });
           throw error;

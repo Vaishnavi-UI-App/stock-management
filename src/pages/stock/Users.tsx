@@ -11,6 +11,8 @@ export function Users() {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [filterRole, setFilterRole] = useState<string>('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ type: string; data: string } | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [credentialsInfo, setCredentialsInfo] = useState<{ name: string; email: string; password: string; phone: string } | null>(null);
@@ -174,6 +176,8 @@ export function Users() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingUser(null);
+    setFormError(null);
+    setSaving(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -221,15 +225,18 @@ export function Users() {
       pfDeduction: formData.pfDeduction ? parseFloat(formData.pfDeduction) : undefined
     };
 
-    if (editingUser) {
-      const updateData: Record<string, unknown> = { ...userData };
-      if (!formData.password) {
-        delete updateData.password;
-      }
-      await updateUser(editingUser, updateData);
-      handleCloseModal();
-    } else {
-      try {
+    setFormError(null);
+    setSaving(true);
+
+    try {
+      if (editingUser) {
+        const updateData: Record<string, unknown> = { ...userData };
+        if (!formData.password) {
+          delete updateData.password;
+        }
+        await updateUser(editingUser, updateData);
+        handleCloseModal();
+      } else {
         await addUser(userData);
         // Show WhatsApp credentials dialog after successful creation
         setCredentialsInfo({
@@ -239,9 +246,10 @@ export function Users() {
           phone: formData.phone
         });
         handleCloseModal();
-      } catch {
-        // Error is handled by the store
       }
+    } catch (error: any) {
+      setFormError(error.message || 'Failed to save user. Please try again.');
+      setSaving(false);
     }
   };
 
@@ -478,6 +486,11 @@ export function Users() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
+                {formError && (
+                  <div style={{ background: '#fee', border: '1px solid #c00', color: '#c00', padding: '10px 14px', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' }}>
+                    {formError}
+                  </div>
+                )}
                 {/* Profile Photo Upload */}
                 <div style={{ textAlign: 'center', marginBottom: '20px' }}>
                   <div
@@ -995,8 +1008,8 @@ export function Users() {
                 <button type="button" className="btn btn-secondary" onClick={handleCloseModal}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingUser ? 'Update Employee' : 'Add Employee'}
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? 'Saving...' : (editingUser ? 'Update Employee' : 'Add Employee')}
                 </button>
               </div>
             </form>

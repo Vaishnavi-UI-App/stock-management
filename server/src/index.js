@@ -378,6 +378,14 @@ app.post('/api/products', authMiddleware, async (req, res) => {
 
     const product = await prisma.product.create({ data: productData });
 
+    // Auto-create a zero-quantity CompanyStock row so new products show up on
+    // the Company Stock page immediately (where the grid is driven by CompanyStock rows).
+    try {
+      await prisma.companyStock.create({ data: { productId: product.id, quantity: 0 } });
+    } catch (stockErr) {
+      console.error('CompanyStock auto-create failed:', stockErr.message);
+    }
+
     // If batchNo provided, also create a ProductBatch record
     if (batchNo) {
       await prisma.productBatch.create({
@@ -491,6 +499,19 @@ app.delete('/api/products/:id', authMiddleware, async (req, res) => {
 // Get company stock
 app.get('/api/company-stock', authMiddleware, async (req, res) => {
   try {
+    // Backfill: ensure every product has a CompanyStock row so newly added
+    // products (including legacy ones created before auto-creation) appear here.
+    const productsWithoutStock = await prisma.product.findMany({
+      where: { companyStock: null },
+      select: { id: true },
+    });
+    if (productsWithoutStock.length > 0) {
+      await prisma.companyStock.createMany({
+        data: productsWithoutStock.map(p => ({ productId: p.id, quantity: 0 })),
+        skipDuplicates: true,
+      });
+    }
+
     const stock = await prisma.companyStock.findMany({
       include: { product: true }
     });
@@ -1238,8 +1259,20 @@ app.delete('/api/sales/:id', authMiddleware, async (req, res) => {
 // Get all customers
 app.get('/api/customers', authMiddleware, async (req, res) => {
   try {
+    const { q, limit } = req.query;
+    const where = {};
+    if (q && String(q).trim().length > 0) {
+      const term = String(q).trim();
+      where.OR = [
+        { name: { contains: term } },
+        { gstin: { contains: term } },
+        { phone: { contains: term } },
+      ];
+    }
     const customers = await prisma.customer.findMany({
-      orderBy: { createdAt: 'desc' }
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit ? Math.min(parseInt(String(limit), 10) || 20, 50) : undefined,
     });
     res.json(customers);
   } catch (error) {
@@ -4268,17 +4301,26 @@ app.put('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Dealer application not found' });
     }
 
-    if (existing.userId !== req.user.id) {
+    const isPrivileged = req.user.role === 'stock_manager' || req.user.role === 'account_manager' || req.user.role === 'branch_manager';
+
+    if (existing.userId !== req.user.id && !isPrivileged) {
       return res.status(403).json({ error: 'Cannot edit other user\'s application' });
     }
 
-    if (existing.status !== 'pending') {
-      return res.status(403).json({ error: 'Cannot edit approved/rejected application' });
+    if (existing.status === 'approved') {
+      return res.status(403).json({ error: 'Cannot edit approved application' });
     }
+
+    // If editing a rejected application, reset it to pending for re-review
+    // and clear the prior rejection metadata.
+    const resetRejection = existing.status === 'rejected'
+      ? { status: 'pending', rejectionReason: null, approvedBy: null, approvedAt: null }
+      : {};
 
     const application = await prisma.dealerApplication.update({
       where: { id },
       data: {
+        ...resetRejection,
         firmName: data.firmName,
         fullAddress: data.fullAddress,
         firmType: data.firmType,
@@ -4386,6 +4428,28 @@ app.put('/api/dealer-applications/:id/approve', authMiddleware, async (req, res)
       }
     });
 
+    // Upsert dealer as a Customer so bill creation can auto-fill from this record.
+    // Keyed by mobile (Customer.phone is unique). Skip if mobile is missing.
+    if (application.mobile && String(application.mobile).trim().length > 0) {
+      try {
+        const phone = String(application.mobile).trim();
+        const customerData = {
+          name: application.firmName || phone,
+          email: application.email || null,
+          address: application.fullAddress || null,
+          gstin: application.gst || null,
+          pan: application.pan || null,
+        };
+        await prisma.customer.upsert({
+          where: { phone },
+          update: customerData,
+          create: { phone, ...customerData },
+        });
+      } catch (upsertErr) {
+        console.error('Dealer->Customer upsert failed:', upsertErr.message);
+      }
+    }
+
     createAuditLog(req.user.id, 'APPROVE', 'DealerApplication', id, null, { firmName: application.firmName }, req.ip);
 
     res.json(application);
@@ -4436,6 +4500,262 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c * 1000; // Return distance in meters
 }
+
+// ==================== CHAT ROUTES ====================
+// Immutable messaging: send + read only. No edit, no delete.
+
+const CHAT_ADMIN_ROLES = ['stock_manager', 'account_manager', 'branch_manager'];
+
+// List users available to start a chat with (everyone else, active users)
+app.get('/api/chat/users', authMiddleware, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { id: { not: req.user.id } },
+      select: { id: true, name: true, email: true, role: true, branchId: true, employeeCode: true, profilePhoto: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List my conversations (direct + group I'm in + all broadcasts)
+app.get('/api/chat/conversations', authMiddleware, async (req, res) => {
+  try {
+    const conversations = await prisma.conversation.findMany({
+      where: {
+        OR: [
+          { participants: { some: { userId: req.user.id } } },
+          { type: 'broadcast' },
+        ],
+      },
+      include: {
+        participants: {
+          include: {
+            user: { select: { id: true, name: true, email: true, role: true, profilePhoto: true } },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { sender: { select: { id: true, name: true } } },
+        },
+      },
+      orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    // Compute unread count per conversation for the current user
+    const result = await Promise.all(conversations.map(async c => {
+      const me = c.participants.find(p => p.userId === req.user.id);
+      const lastReadAt = me?.lastReadAt || new Date(0);
+      const unreadCount = await prisma.chatMessage.count({
+        where: {
+          conversationId: c.id,
+          createdAt: { gt: lastReadAt },
+          senderId: { not: req.user.id },
+        },
+      });
+      return { ...c, unreadCount };
+    }));
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create a conversation (direct / group / broadcast)
+app.post('/api/chat/conversations', authMiddleware, async (req, res) => {
+  try {
+    const { type, name, participantIds } = req.body;
+
+    if (!['direct', 'group', 'broadcast'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid conversation type' });
+    }
+
+    if (type === 'broadcast' && !CHAT_ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only managers/admins can create broadcast channels' });
+    }
+
+    if (type === 'direct') {
+      if (!Array.isArray(participantIds) || participantIds.length !== 1) {
+        return res.status(400).json({ error: 'Direct chat needs exactly one other participant' });
+      }
+      const otherId = participantIds[0];
+      if (otherId === req.user.id) {
+        return res.status(400).json({ error: 'Cannot start a direct chat with yourself' });
+      }
+      // Return existing direct chat if one already exists
+      const existing = await prisma.conversation.findFirst({
+        where: {
+          type: 'direct',
+          AND: [
+            { participants: { some: { userId: req.user.id } } },
+            { participants: { some: { userId: otherId } } },
+          ],
+        },
+        include: { participants: { include: { user: { select: { id: true, name: true, email: true, role: true, profilePhoto: true } } } } },
+      });
+      if (existing) return res.json(existing);
+
+      const created = await prisma.conversation.create({
+        data: {
+          type: 'direct',
+          createdById: req.user.id,
+          participants: { create: [{ userId: req.user.id }, { userId: otherId }] },
+        },
+        include: { participants: { include: { user: { select: { id: true, name: true, email: true, role: true, profilePhoto: true } } } } },
+      });
+      return res.status(201).json(created);
+    }
+
+    if (type === 'group') {
+      if (!name || !name.trim()) return res.status(400).json({ error: 'Group name is required' });
+      if (!Array.isArray(participantIds) || participantIds.length < 1) {
+        return res.status(400).json({ error: 'Group needs at least one other participant' });
+      }
+      const unique = Array.from(new Set([req.user.id, ...participantIds]));
+      const created = await prisma.conversation.create({
+        data: {
+          type: 'group',
+          name: name.trim(),
+          createdById: req.user.id,
+          participants: { create: unique.map(userId => ({ userId })) },
+        },
+        include: { participants: { include: { user: { select: { id: true, name: true, email: true, role: true, profilePhoto: true } } } } },
+      });
+      return res.status(201).json(created);
+    }
+
+    // broadcast: everyone is implicitly a reader; no participant list needed
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Broadcast channel name is required' });
+    const created = await prisma.conversation.create({
+      data: {
+        type: 'broadcast',
+        name: name.trim(),
+        createdById: req.user.id,
+      },
+      include: { participants: { include: { user: { select: { id: true, name: true, email: true, role: true, profilePhoto: true } } } } },
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper: check if the current user may access a conversation
+async function userCanAccessConversation(userId, userRole, conversation) {
+  if (!conversation) return false;
+  if (conversation.type === 'broadcast') return true;
+  return conversation.participants.some(p => p.userId === userId);
+}
+
+// List messages in a conversation (paginated; oldest-first within page)
+app.get('/api/chat/conversations/:id/messages', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { before, limit } = req.query;
+    const take = Math.min(parseInt(String(limit || '50'), 10) || 50, 100);
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: { participants: true },
+    });
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+
+    const allowed = await userCanAccessConversation(req.user.id, req.user.role, conversation);
+    if (!allowed) return res.status(403).json({ error: 'Access denied' });
+
+    const where = { conversationId: id };
+    if (before) where.createdAt = { lt: new Date(String(before)) };
+
+    const messages = await prisma.chatMessage.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take,
+      include: { sender: { select: { id: true, name: true, role: true, profilePhoto: true } } },
+    });
+
+    res.json(messages.reverse());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send a message
+app.post('/api/chat/conversations/:id/messages', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+
+    if (!content || !String(content).trim()) {
+      return res.status(400).json({ error: 'Message content is required' });
+    }
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: { participants: true },
+    });
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+
+    // Broadcast: only admins/managers may post
+    if (conversation.type === 'broadcast' && !CHAT_ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only managers/admins can post to broadcast channels' });
+    }
+    if (conversation.type !== 'broadcast') {
+      const allowed = conversation.participants.some(p => p.userId === req.user.id);
+      if (!allowed) return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const [message] = await prisma.$transaction([
+      prisma.chatMessage.create({
+        data: { conversationId: id, senderId: req.user.id, content: String(content).trim() },
+        include: { sender: { select: { id: true, name: true, role: true, profilePhoto: true } } },
+      }),
+      prisma.conversation.update({
+        where: { id },
+        data: { lastMessageAt: new Date() },
+      }),
+    ]);
+
+    res.status(201).json(message);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mark my participant record as read up to now
+app.post('/api/chat/conversations/:id/read', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: { participants: true },
+    });
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+
+    // For broadcasts, lazily create a participant row so we can track last-read
+    const participant = conversation.participants.find(p => p.userId === req.user.id);
+    if (participant) {
+      await prisma.conversationParticipant.update({
+        where: { id: participant.id },
+        data: { lastReadAt: new Date() },
+      });
+    } else if (conversation.type === 'broadcast') {
+      await prisma.conversationParticipant.create({
+        data: { conversationId: id, userId: req.user.id, lastReadAt: new Date() },
+      });
+    } else {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Start server
 app.listen(PORT, () => {

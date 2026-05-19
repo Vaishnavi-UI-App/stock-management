@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Download, Eraser, Upload, Camera, Share2, Plus, ArrowLeft, Eye, CheckCircle, XCircle, Trash2, Clock, Loader2 } from 'lucide-react';
+import { Download, Eraser, Upload, Camera, Share2, Plus, ArrowLeft, Eye, Edit2, CheckCircle, XCircle, Trash2, Clock, Loader2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
@@ -55,6 +55,9 @@ export function DealerApplication() {
   const { currentUser } = useStore();
   const salesmanName = currentUser?.name || '';
   const isAdmin = currentUser?.role === 'stock_manager' || currentUser?.role === 'account_manager';
+  const isManager = currentUser?.role === 'branch_manager';
+  const canEditApp = (app: DealerAppType) =>
+    app.status !== 'approved' && (app.userId === currentUser?.id || isAdmin || isManager);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -233,9 +236,7 @@ export function DealerApplication() {
     setViewMode('form');
   };
 
-  const goToView = (app: DealerAppType) => {
-    setSelectedApp(app);
-    // Populate form from app data
+  const populateFormFromApp = (app: DealerAppType) => {
     const f = { ...emptyForm };
     for (const key of Object.keys(emptyForm) as (keyof typeof emptyForm)[]) {
       if ((app as any)[key] != null) (f as any)[key] = (app as any)[key];
@@ -248,8 +249,20 @@ export function DealerApplication() {
     });
     setSignature(app.signature || '');
     setTsoSignature(app.tsoSignature || '');
+  };
+
+  const goToView = (app: DealerAppType) => {
+    setSelectedApp(app);
+    populateFormFromApp(app);
     setReadOnly(true);
     setViewMode('view');
+  };
+
+  const goToEdit = (app: DealerAppType) => {
+    setSelectedApp(app);
+    populateFormFromApp(app);
+    setReadOnly(false);
+    setViewMode('form');
   };
 
   const goToList = () => {
@@ -275,9 +288,11 @@ export function DealerApplication() {
         signature,
         tsoSignature,
       };
-      if (selectedApp && selectedApp.status === 'pending') {
+      if (selectedApp && selectedApp.status !== 'approved') {
         await dealerApplicationsApi.update(selectedApp.id, payload);
-        alert('Application updated successfully!');
+        alert(selectedApp.status === 'rejected'
+          ? 'Application updated and resubmitted for review!'
+          : 'Application updated successfully!');
       } else {
         await dealerApplicationsApi.create(payload);
         alert('Application submitted successfully!');
@@ -430,6 +445,13 @@ export function DealerApplication() {
                         <button className="btn btn-secondary btn-sm" onClick={() => goToView(app)} title="View">
                           <Eye size={14} />
                         </button>
+                        {canEditApp(app) && (
+                          <button className="btn btn-sm" onClick={() => goToEdit(app)}
+                            title={app.status === 'rejected' ? 'Edit & Resubmit' : 'Edit'}
+                            style={{ background: '#e3f2fd', color: '#1565c0', border: '1px solid #90caf9' }}>
+                            <Edit2 size={14} />
+                          </button>
+                        )}
                         {isAdmin && app.status === 'pending' && (
                           <>
                             <button className="btn btn-sm" onClick={() => handleApprove(app.id)} title="Approve"
@@ -504,6 +526,13 @@ export function DealerApplication() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {statusBadge(selectedApp.status)}
             </div>
+          )}
+          {/* Edit button for pending/rejected in view mode (owner/admin/manager) */}
+          {isViewMode && selectedApp && canEditApp(selectedApp) && (
+            <button className="btn btn-sm" onClick={() => goToEdit(selectedApp)}
+              style={{ background: '#e3f2fd', color: '#1565c0', border: '1px solid #90caf9', padding: '8px 16px' }}>
+              <Edit2 size={16} /> {selectedApp.status === 'rejected' ? 'Edit & Resubmit' : 'Edit'}
+            </button>
           )}
           {/* Admin approve/reject buttons for pending in view mode */}
           {isViewMode && isAdmin && selectedApp?.status === 'pending' && (

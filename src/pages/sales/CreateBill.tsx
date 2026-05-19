@@ -3,6 +3,7 @@ import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, MapPin, Dow
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
+import { customersApi } from '../../services/api';
 import type { SaleItem } from '../../types';
 import { TaxInvoice } from '../../components/TaxInvoice';
 import './Sales.css';
@@ -37,6 +38,42 @@ export function CreateBill() {
   const [vehicleNo, setVehicleNo] = useState('');
   const [checkNumber, setCheckNumber] = useState('');
   const [checkPhotoName, setCheckPhotoName] = useState('');
+
+  // Customer autocomplete
+  const [customerSuggestions, setCustomerSuggestions] = useState<Array<{
+    id: string; name: string; phone: string; email?: string | null; address?: string | null; gstin?: string | null;
+  }>>([]);
+  const [suggestionField, setSuggestionField] = useState<'name' | 'gstin' | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const runCustomerSearch = (query: string, field: 'name' | 'gstin') => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    const term = query.trim();
+    if (term.length < 2) {
+      setCustomerSuggestions([]);
+      setSuggestionField(null);
+      return;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await customersApi.search(term, 8);
+        setCustomerSuggestions(Array.isArray(results) ? results : []);
+        setSuggestionField(field);
+      } catch {
+        setCustomerSuggestions([]);
+      }
+    }, 250);
+  };
+
+  const selectCustomerSuggestion = (c: { name: string; phone: string; email?: string | null; address?: string | null; gstin?: string | null }) => {
+    setCustomerName(c.name || '');
+    setCustomerPhone(c.phone || '');
+    setCustomerEmail(c.email || '');
+    setCustomerAddress(c.address || '');
+    setCustomerGSTIN(c.gstin || '');
+    setCustomerSuggestions([]);
+    setSuggestionField(null);
+  };
 
   const [showBill, setShowBill] = useState(false);
   const [createdSale, setCreatedSale] = useState<Awaited<ReturnType<typeof createSale>> | null>(null);
@@ -570,15 +607,44 @@ export function CreateBill() {
               </div>
             )}
 
-            <div className="form-group">
+            <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label">Customer Name *</label>
               <input
                 type="text"
                 className="form-input"
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
+                onChange={(e) => {
+                  setCustomerName(e.target.value);
+                  runCustomerSearch(e.target.value, 'name');
+                }}
+                onFocus={() => { if (customerName.trim().length >= 2) runCustomerSearch(customerName, 'name'); }}
+                onBlur={() => setTimeout(() => setSuggestionField(f => (f === 'name' ? null : f)), 150)}
                 placeholder="Enter customer name"
+                autoComplete="off"
               />
+              {suggestionField === 'name' && customerSuggestions.length > 0 && (
+                <ul style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+                  background: '#fff', border: '1px solid #d1d5db', borderRadius: 6,
+                  margin: 0, padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                }}>
+                  {customerSuggestions.map(c => (
+                    <li
+                      key={c.id}
+                      onMouseDown={(e) => { e.preventDefault(); selectCustomerSuggestion(c); }}
+                      style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                    >
+                      <div style={{ fontWeight: 600 }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: '#666' }}>
+                        {c.phone}{c.gstin ? ` • GSTIN ${c.gstin}` : ''}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Phone *</label>
@@ -610,15 +676,44 @@ export function CreateBill() {
                 rows={2}
               />
             </div>
-            <div className="form-group">
+            <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label">GSTIN *</label>
               <input
                 type="text"
                 className="form-input"
                 value={customerGSTIN}
-                onChange={(e) => setCustomerGSTIN(e.target.value)}
+                onChange={(e) => {
+                  setCustomerGSTIN(e.target.value);
+                  runCustomerSearch(e.target.value, 'gstin');
+                }}
+                onFocus={() => { if (customerGSTIN.trim().length >= 2) runCustomerSearch(customerGSTIN, 'gstin'); }}
+                onBlur={() => setTimeout(() => setSuggestionField(f => (f === 'gstin' ? null : f)), 150)}
                 placeholder="Customer GSTIN"
+                autoComplete="off"
               />
+              {suggestionField === 'gstin' && customerSuggestions.length > 0 && (
+                <ul style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+                  background: '#fff', border: '1px solid #d1d5db', borderRadius: 6,
+                  margin: 0, padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                }}>
+                  {customerSuggestions.map(c => (
+                    <li
+                      key={c.id}
+                      onMouseDown={(e) => { e.preventDefault(); selectCustomerSuggestion(c); }}
+                      style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                    >
+                      <div style={{ fontWeight: 600 }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: '#666' }}>
+                        {c.phone}{c.gstin ? ` • GSTIN ${c.gstin}` : ''}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
               <div className="form-group" style={{ flex: 1 }}>

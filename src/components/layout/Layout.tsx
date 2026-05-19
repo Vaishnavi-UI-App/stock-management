@@ -34,7 +34,8 @@ import {
   Navigation,
   Handshake,
   CircleDollarSign,
-  Video
+  Video,
+  MessageSquare
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useLanguage } from '../../i18n/useLanguage';
@@ -92,6 +93,7 @@ export function Layout({ children }: LayoutProps) {
         { path: '/reports', icon: BarChart3, label: 'Reports' },
         { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
         { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/chat', icon: MessageSquare, label: 'Chat' },
         { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
         { path: '/language-settings', icon: Globe, label: 'Language' },
       ];
@@ -110,6 +112,7 @@ export function Layout({ children }: LayoutProps) {
         { path: '/damage-tracking', icon: Trash2, label: 'Damage Tracking' },
         { path: '/leave-management', icon: CalendarDays, label: 'Leave Mgmt' },
         { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/chat', icon: MessageSquare, label: 'Chat' },
         { path: '/payroll', icon: DollarSign, label: 'Payroll' },
         { path: '/gst-reports', icon: FileText, label: 'GST Reports' },
         { path: '/all-sales', icon: ShoppingCart, label: 'All Sales' },
@@ -130,6 +133,7 @@ export function Layout({ children }: LayoutProps) {
         { path: '/branch-stock-alerts', icon: AlertTriangle, label: 'Stock Alerts' },
         { path: '/notifications', icon: Bell, label: 'Notifications' },
         { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/chat', icon: MessageSquare, label: 'Chat' },
         { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
         { path: '/reports', icon: BarChart3, label: t.reports },
       ];
@@ -147,6 +151,7 @@ export function Layout({ children }: LayoutProps) {
         { path: '/my-sales', icon: ShoppingCart, label: t.mySales },
         { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
         { path: '/meeting', icon: Video, label: 'Meeting' },
+        { path: '/chat', icon: MessageSquare, label: 'Chat' },
         { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
         { path: '/my-expenditures', icon: Receipt, label: t.expenditures },
         { path: '/my-leaves', icon: CalendarDays, label: t.myLeaves },

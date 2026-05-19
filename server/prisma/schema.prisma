@@ -131,6 +131,10 @@ model User {
   stockRequests  StockUpdateRequest[] @relation("StockRequests")
   notifications  Notification[]       @relation("UserNotifications")
   dealerApplications DealerApplication[]
+  // Chat relations
+  chatParticipations ConversationParticipant[]
+  chatMessages       ChatMessage[]
+  chatConversationsCreated Conversation[] @relation("ConversationCreator")
 }
 
 enum UserRole {
@@ -963,4 +967,55 @@ model Notification {
   isRead      Boolean  @default(false)
   createdBy   String?
   createdAt   DateTime @default(now())
+}
+
+// ==================== CHAT ====================
+// Messages are immutable: no edit, no delete. Participants can only send and read.
+
+enum ConversationType {
+  direct     // 1-on-1 between exactly two users
+  group      // private group with selected participants
+  broadcast  // company-wide channel everyone can read (admins/managers post)
+}
+
+model Conversation {
+  id           String            @id @default(cuid())
+  type         ConversationType
+  name         String?           // required for group/broadcast; null for direct
+  createdById  String
+  createdBy    User              @relation("ConversationCreator", fields: [createdById], references: [id])
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  lastMessageAt DateTime?        // bumped when a new message arrives, used to sort list
+
+  participants ConversationParticipant[]
+  messages     ChatMessage[]
+
+  @@index([type])
+  @@index([lastMessageAt])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  joinedAt       DateTime     @default(now())
+  lastReadAt     DateTime?    // for unread-count calculation
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }

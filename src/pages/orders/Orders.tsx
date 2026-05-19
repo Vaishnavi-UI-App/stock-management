@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingBag, Eye, CheckCircle, XCircle, Printer, Clock, Filter, Search } from 'lucide-react';
+import { ShoppingBag, Eye, CheckCircle, XCircle, Printer, Clock, Filter, Search, Download, Share2 } from 'lucide-react';
 import { ordersApi } from '../../services/api';
 import { useStore } from '../../store/useStore';
 import type { Order } from '../../types';
 import { PurchaseInvoice } from '../../components/PurchaseInvoice';
+import { downloadPdfFromRef, shareWhatsAppFromRef } from '../../utils/pdfShare';
 // TaxInvoice available if needed
 
 import { format } from 'date-fns';
@@ -89,6 +90,25 @@ export function Orders() {
     window.print();
   };
 
+  const handleDownload = async () => {
+    if (!selectedOrder) return;
+    try {
+      await downloadPdfFromRef(invoiceRef, `Purchase_Invoice_${selectedOrder.orderNumber}`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to download PDF');
+    }
+  };
+
+  const handleShare = async () => {
+    if (!selectedOrder) return;
+    try {
+      const text = `Purchase Invoice #${selectedOrder.orderNumber}\nCustomer: ${selectedOrder.customerName}\nAmount: ₹${selectedOrder.finalAmount.toLocaleString()}`;
+      await shareWhatsAppFromRef(invoiceRef, `Purchase_Invoice_${selectedOrder.orderNumber}`, text);
+    } catch (err: any) {
+      alert(err.message || 'Failed to share');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
@@ -134,6 +154,14 @@ export function Orders() {
             <button className="btn btn-primary" onClick={handlePrint}>
               <Printer size={18} />
               Print
+            </button>
+            <button className="btn btn-secondary" onClick={handleDownload}>
+              <Download size={18} />
+              Download
+            </button>
+            <button className="btn btn-success" onClick={handleShare} style={{ background: '#25D366', borderColor: '#25D366' }}>
+              <Share2 size={18} />
+              Share
             </button>
             {selectedOrder.orderStatus === 'pending' && (
               <>

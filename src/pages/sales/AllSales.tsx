@@ -1,7 +1,11 @@
-import { useState } from 'react';
-import { Search, Eye, X } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Search, Eye, X, Download, Printer, Share2 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
 import { format } from 'date-fns';
+import { TaxInvoice } from '../../components/TaxInvoice';
+import type { Sale } from '../../types';
 import './Sales.css';
 
 export function AllSales() {
@@ -11,6 +15,8 @@ export function AllSales() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedSale, setSelectedSale] = useState<string | null>(null);
+  const [printSale, setPrintSale] = useState<Sale | null>(null);
+  const billRef = useRef<HTMLDivElement>(null);
 
   // For branch managers, only show their branch sales
   const isBranchManager = currentUser?.role === 'branch_manager';
@@ -39,6 +45,133 @@ export function AllSales() {
   const years = [2024, 2025, 2026];
 
   const viewedSale = selectedSale ? sales.find(s => s.id === selectedSale) : null;
+
+  const handlePrint = (sale: Sale) => {
+    setPrintSale(sale);
+    setTimeout(() => {
+      window.print();
+    }, 100);
+  };
+
+  const handleDownloadPDF = async (sale: Sale) => {
+    if (!printSale || printSale.id !== sale.id) {
+      setPrintSale(sale);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    const element = billRef.current;
+    if (!element) return;
+    try {
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      } else {
+        let y = 0;
+        while (y < imgHeight) {
+          pdf.addImage(imgData, 'PNG', 0, -y, imgWidth, imgHeight);
+          y += pageHeight;
+          if (y < imgHeight) pdf.addPage();
+        }
+      }
+      pdf.save(`Bill-${sale.billNumber}.pdf`);
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('Failed to generate PDF. Please try printing instead.');
+    }
+  };
+
+  const handleShareWhatsApp = async (sale: Sale) => {
+    if (!printSale || printSale.id !== sale.id) {
+      setPrintSale(sale);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    const element = billRef.current;
+    if (!element) return;
+    try {
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      } else {
+        let y = 0;
+        while (y < imgHeight) {
+          pdf.addImage(imgData, 'PNG', 0, -y, imgWidth, imgHeight);
+          y += pageHeight;
+          if (y < imgHeight) pdf.addPage();
+        }
+      }
+      const pdfBlob = pdf.output('blob');
+      const pdfFile = new File([pdfBlob], `Bill-${sale.billNumber}.pdf`, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Bill #${sale.billNumber}`,
+          text: `Bill #${sale.billNumber} - Amount: ₹${sale.finalAmount.toLocaleString()}`
+        });
+      } else {
+        pdf.save(`Bill-${sale.billNumber}.pdf`);
+        const text = encodeURIComponent(
+          `Bill #${sale.billNumber}\nCustomer: ${sale.customerName}\nAmount: ₹${sale.finalAmount.toLocaleString()}\nBalance Due: ₹${(sale.balanceDue || 0).toLocaleString()}`
+        );
+        const cleanPhone = (sale.customerPhone || '').replace(/\D/g, '');
+        const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${text}` : `https://wa.me/?text=${text}`;
+        window.open(waUrl, '_blank');
+      }
+    } catch (err) {
+      console.error('WhatsApp share failed:', err);
+      if ((err as Error)?.name !== 'AbortError') {
+        const text = encodeURIComponent(
+          `Bill #${sale.billNumber}\nCustomer: ${sale.customerName}\nAmount: ₹${sale.finalAmount.toLocaleString()}`
+        );
+        const cleanPhone = (sale.customerPhone || '').replace(/\D/g, '');
+        const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${text}` : `https://wa.me/?text=${text}`;
+        window.open(waUrl, '_blank');
+      }
+    }
+  };
+
+  // Show print/invoice view
+  if (printSale) {
+    return (
+      <div className="sales-page">
+        <div className="page-header no-print">
+          <div>
+            <h1>Tax Invoice</h1>
+            <p>Bill #{printSale.billNumber}</p>
+          </div>
+          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => handleDownloadPDF(printSale)}>
+              <Download size={18} />
+              Download PDF
+            </button>
+            <button className="btn btn-success" onClick={() => handleShareWhatsApp(printSale)} style={{ background: '#25D366', borderColor: '#25D366' }}>
+              <Share2 size={18} />
+              WhatsApp
+            </button>
+            <button className="btn btn-secondary" onClick={() => window.print()}>
+              <Printer size={18} />
+              Print
+            </button>
+            <button className="btn btn-secondary" onClick={() => setPrintSale(null)}>
+              Back to {isBranchManager ? 'Branch Sales' : 'All Sales'}
+            </button>
+          </div>
+        </div>
+        <TaxInvoice ref={billRef} sale={printSale} />
+      </div>
+    );
+  }
 
   return (
     <div className="sales-page">
@@ -171,12 +304,41 @@ export function AllSales() {
                         </span>
                       </td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => setSelectedSale(sale.id)}
-                        >
-                          <Eye size={14} />
-                        </button>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => setSelectedSale(sale.id)}
+                            title="View Details"
+                          >
+                            <Eye size={14} />
+                          </button>
+                          {sale.status === 'approved' && (
+                            <>
+                              <button
+                                className="btn btn-sm btn-primary"
+                                onClick={() => handleDownloadPDF(sale)}
+                                title="Download PDF"
+                              >
+                                <Download size={14} />
+                              </button>
+                              <button
+                                className="btn btn-sm"
+                                onClick={() => handleShareWhatsApp(sale)}
+                                title="Share to WhatsApp"
+                                style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }}
+                              >
+                                <Share2 size={14} />
+                              </button>
+                              <button
+                                className="btn btn-sm btn-success"
+                                onClick={() => handlePrint(sale)}
+                                title="Print Bill"
+                              >
+                                <Printer size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -204,6 +366,57 @@ export function AllSales() {
               </button>
             </div>
             <div className="modal-body">
+              {/* Download/Print Actions */}
+              {viewedSale.status === 'approved' && (
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  background: '#d4edda',
+                  color: '#155724',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontWeight: '600' }}>Approved - Ready to Download</span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setSelectedSale(null);
+                        handleDownloadPDF(viewedSale);
+                      }}
+                    >
+                      <Download size={14} />
+                      PDF
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setSelectedSale(null);
+                        handleShareWhatsApp(viewedSale);
+                      }}
+                      style={{ background: '#25D366', color: '#fff', borderColor: '#25D366' }}
+                    >
+                      <Share2 size={14} />
+                      WhatsApp
+                    </button>
+                    <button
+                      className="btn btn-success btn-sm"
+                      onClick={() => {
+                        setSelectedSale(null);
+                        handlePrint(viewedSale);
+                      }}
+                    >
+                      <Printer size={14} />
+                      Print
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="bill-preview-info" style={{ marginBottom: '20px' }}>
                 <div>
                   <label>Customer:</label>

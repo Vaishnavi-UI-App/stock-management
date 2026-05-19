@@ -27,6 +27,7 @@ import { AttendanceManagement } from './pages/admin/AttendanceManagement';
 import { MyAttendance } from './pages/attendance/MyAttendance';
 import { Profile } from './pages/profile/Profile';
 import { Orders } from './pages/orders/Orders';
+import { Chat } from './pages/chat/Chat';
 // New Feature Pages
 import { GSTReports } from './pages/admin/GSTReports';
 import { SalesReturns } from './pages/admin/SalesReturns';
@@ -215,6 +216,7 @@ function App() {
         <Route path="/dealer-application" element={<ProtectedRoute><DealerApplication /></ProtectedRoute>} />
         <Route path="/payment-received" element={<ProtectedRoute><PaymentReceived /></ProtectedRoute>} />
         <Route path="/meeting" element={<ProtectedRoute><Meeting /></ProtectedRoute>} />
+        <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
 
         {/* Attendance - All Users */}
         <Route

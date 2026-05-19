@@ -569,16 +569,33 @@ export function MySales() {
                   </span>
                 </div>
                 {viewedSale.status === 'approved' && (
-                  <button
-                    className="btn btn-success btn-sm"
-                    onClick={() => {
-                      setSelectedSale(null);
-                      handlePrint(viewedSale);
-                    }}
-                  >
-                    <Printer size={16} />
-                    Print Bill
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-success btn-sm"
+                      onClick={() => {
+                        setSelectedSale(null);
+                        handlePrint(viewedSale);
+                      }}
+                    >
+                      <Printer size={16} />
+                      Print
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleDownloadPDF(viewedSale)}
+                    >
+                      <Download size={16} />
+                      Download
+                    </button>
+                    <button
+                      className="btn btn-success btn-sm"
+                      style={{ background: '#25D366', borderColor: '#25D366' }}
+                      onClick={() => handleShareWhatsApp(viewedSale)}
+                    >
+                      <Share2 size={16} />
+                      Share
+                    </button>
+                  </div>
                 )}
               </div>
 
