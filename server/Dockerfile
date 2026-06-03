@@ -25,8 +25,14 @@ RUN npm ci
 
 COPY . .
 
-# Generate Prisma client inside the image
-RUN npx prisma generate
+# Generate the Prisma client from the locally-installed CLI directly, which
+# avoids the npx registry lookup that fails behind a TLS-inspecting proxy.
+# INSECURE_TLS=1 relaxes TLS verification for THIS build step only (pass it when
+# building on a network whose proxy cert Node does not trust). It is NOT baked
+# into the runtime image, and defaults to secure for clean networks (e.g. VPS).
+ARG INSECURE_TLS=
+RUN if [ -n "$INSECURE_TLS" ]; then export NODE_TLS_REJECT_UNAUTHORIZED=0; fi; \
+    ./node_modules/.bin/prisma generate
 
 EXPOSE 3001
-CMD ["sh", "-c", "npx prisma db push && npm start"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push && npm start"]
