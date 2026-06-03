@@ -10,7 +10,7 @@ import type { Sale } from '../../types';
 import './Sales.css';
 
 export function MySales() {
-  const { currentUser, sales, fetchSales } = useStore();
+  const { currentUser, sales, fetchSales, products, salesmanStock } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
@@ -18,9 +18,14 @@ export function MySales() {
     customerName: '', customerPhone: '', customerEmail: '', customerAddress: '', customerGSTIN: '',
     discount: 0, amountPaid: 0, modeOfPayment: '', destination: '', vehicleNo: ''
   });
+  const [editItems, setEditItems] = useState<Array<{ productId: string; productName: string; quantity: number; price: number; total: number; hsnCode?: string; unit?: string }>>([]);
+  const [addItemProductId, setAddItemProductId] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedSale, setSelectedSale] = useState<string | null>(null);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
+  const [deletingSale, setDeletingSale] = useState<Sale | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const billRef = useRef<HTMLDivElement>(null);
 
   const mySales = sales.filter(s => s.salesmanId === currentUser?.id);
@@ -166,13 +171,28 @@ export function MySales() {
     }
   };
 
-  const handleDelete = async (sale: Sale) => {
-    if (!window.confirm(`Delete bill ${sale.billNumber}?`)) return;
+  const openDeleteModal = (sale: Sale) => {
+    setDeletingSale(sale);
+    setDeleteReason('');
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingSale) return;
+    const reason = deleteReason.trim();
+    if (!reason) {
+      alert('Please enter a reason — this is required to delete a bill.');
+      return;
+    }
+    setDeleteSubmitting(true);
     try {
-      await salesApi.delete(sale.id);
+      await salesApi.delete(deletingSale.id, reason);
       await fetchSales({ salesmanId: currentUser?.id });
+      setDeletingSale(null);
+      setDeleteReason('');
     } catch (error: any) {
       alert(error.message || 'Failed to delete bill');
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -189,13 +209,60 @@ export function MySales() {
       destination: sale.destination || '',
       vehicleNo: sale.vehicleNo || ''
     });
+    setEditItems(sale.items.map(it => ({
+      productId: it.productId,
+      productName: it.productName,
+      quantity: it.quantity,
+      price: it.price,
+      total: it.total,
+      hsnCode: it.hsnCode || undefined,
+      unit: it.unit || undefined,
+    })));
+    setAddItemProductId('');
     setEditingSale(sale);
+  };
+
+  const updateItemQty = (idx: number, qty: number) => {
+    setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: qty, total: qty * it.price } : it));
+  };
+  const updateItemPrice = (idx: number, price: number) => {
+    setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, price, total: it.quantity * price } : it));
+  };
+  const removeItem = (idx: number) => {
+    setEditItems(prev => prev.filter((_, i) => i !== idx));
+  };
+  const addItemFromPicker = () => {
+    if (!addItemProductId) return;
+    const product = products.find(p => p.id === addItemProductId);
+    if (!product) return;
+    if (editItems.some(it => it.productId === product.id)) {
+      alert('This product is already in the bill — adjust the quantity instead.');
+      return;
+    }
+    setEditItems(prev => [...prev, {
+      productId: product.id,
+      productName: product.name,
+      quantity: 1,
+      price: product.price,
+      total: product.price,
+      hsnCode: (product as any).sku,
+      unit: product.unit,
+    }]);
+    setAddItemProductId('');
   };
 
   const handleEditSave = async () => {
     if (!editingSale) return;
+    if (editItems.length === 0) {
+      alert('Bill must have at least one item.');
+      return;
+    }
+    if (editItems.some(it => !it.quantity || it.quantity <= 0)) {
+      alert('Every item must have a quantity greater than 0.');
+      return;
+    }
     try {
-      const subtotal = editingSale.items.reduce((sum, item) => sum + item.total, 0);
+      const subtotal = editItems.reduce((sum, item) => sum + item.total, 0);
       const finalAmount = subtotal - editForm.discount;
       await salesApi.update(editingSale.id, {
         customerName: editForm.customerName,
@@ -204,13 +271,15 @@ export function MySales() {
         customerAddress: editForm.customerAddress,
         customerGSTIN: editForm.customerGSTIN,
         discount: editForm.discount,
+        totalAmount: subtotal,
         finalAmount,
         amountPaid: editForm.amountPaid,
         balanceDue: finalAmount - editForm.amountPaid,
         paymentStatus: editForm.amountPaid >= finalAmount ? 'paid' : editForm.amountPaid > 0 ? 'partial' : 'unpaid',
         modeOfPayment: editForm.modeOfPayment,
         destination: editForm.destination,
-        vehicleNo: editForm.vehicleNo
+        vehicleNo: editForm.vehicleNo,
+        items: editItems,
       });
       await fetchSales({ salesmanId: currentUser?.id });
       setEditingSale(null);
@@ -366,7 +435,13 @@ export function MySales() {
                         )}
                       </td>
                       <td>
-                        {getStatusBadge(sale.status || 'pending')}
+                        {(sale as any).deletedAt ? (
+                          <span className="status-badge" style={{ background: '#f1f5f9', color: '#475569', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600 }} title={(sale as any).deleteReason || 'Deleted'}>
+                            Deleted
+                          </span>
+                        ) : (
+                          getStatusBadge(sale.status || 'pending')
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '4px' }}>
@@ -377,15 +452,15 @@ export function MySales() {
                           >
                             <Eye size={14} />
                           </button>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => handleEditOpen(sale)}
-                            title="Edit Bill"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          {sale.status === 'approved' && (
+                          {!(sale as any).deletedAt && (
                             <>
+                              <button
+                                className="btn btn-sm btn-secondary"
+                                onClick={() => handleEditOpen(sale)}
+                                title="Edit Bill"
+                              >
+                                <Edit2 size={14} />
+                              </button>
                               <button
                                 className="btn btn-sm btn-primary"
                                 onClick={() => handleDownloadPDF(sale)}
@@ -408,16 +483,14 @@ export function MySales() {
                               >
                                 <Printer size={14} />
                               </button>
+                              <button
+                                className="btn btn-sm btn-danger"
+                                onClick={() => openDeleteModal(sale)}
+                                title="Delete Bill"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </>
-                          )}
-                          {sale.status === 'pending' && (
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={() => handleDelete(sale)}
-                              title="Delete Bill"
-                            >
-                              <Trash2 size={14} />
-                            </button>
                           )}
                         </div>
                       </td>
@@ -459,6 +532,41 @@ export function MySales() {
           )}
         </div>
       </div>
+
+      {/* Delete Bill Modal */}
+      {deletingSale && (
+        <div className="modal-overlay" onClick={() => !deleteSubmitting && setDeletingSale(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Delete Bill #{deletingSale.billNumber}</h3>
+              <button className="modal-close" onClick={() => !deleteSubmitting && setDeletingSale(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: '#475569', marginBottom: 12 }}>
+                The bill will be marked as <b>Deleted</b> and kept in records.
+                Invoice number <b>{deletingSale.billNumber}</b> will not be reused.
+              </p>
+              <div className="form-group">
+                <label className="form-label">Reason for deletion <span style={{ color: '#dc2626' }}>*</span></label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  placeholder="Enter the reason — required"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setDeletingSale(null)} disabled={deleteSubmitting}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleDeleteConfirm} disabled={deleteSubmitting || !deleteReason.trim()}>
+                {deleteSubmitting ? 'Deleting...' : 'Delete Bill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Sale Modal */}
       {editingSale && (
@@ -516,19 +624,82 @@ export function MySales() {
                 <input className="form-input" value={editForm.vehicleNo} onChange={e => setEditForm({ ...editForm, vehicleNo: e.target.value })} />
               </div>
 
-              {/* Items (read only) */}
+              {/* Items (editable) */}
               <div style={{ marginTop: 12, padding: 12, background: '#f8f9fa', borderRadius: 8 }}>
                 <h4 style={{ fontSize: 14, marginBottom: 8 }}>Items</h4>
                 <table className="table" style={{ fontSize: 13 }}>
-                  <thead><tr><th>Product</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+                  <thead><tr><th>Product</th><th style={{ width: 90 }}>Qty</th><th style={{ width: 110 }}>Rate (₹)</th><th>Amount</th><th style={{ width: 50 }}></th></tr></thead>
                   <tbody>
-                    {editingSale.items.map((item, i) => (
-                      <tr key={i}><td>{item.productName}</td><td>{item.quantity}</td><td>₹{item.price}</td><td>₹{item.total}</td></tr>
+                    {editItems.map((item, i) => (
+                      <tr key={i}>
+                        <td>{item.productName}</td>
+                        <td>
+                          <input
+                            type="number"
+                            className="form-input"
+                            style={{ width: 80, padding: '4px 6px' }}
+                            min={1}
+                            value={item.quantity}
+                            onChange={e => updateItemQty(i, parseInt(e.target.value, 10) || 0)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            className="form-input"
+                            style={{ width: 100, padding: '4px 6px' }}
+                            min={0}
+                            step="0.01"
+                            value={item.price}
+                            onChange={e => updateItemPrice(i, parseFloat(e.target.value) || 0)}
+                          />
+                        </td>
+                        <td>₹{item.total.toLocaleString()}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            title="Remove item"
+                            onClick={() => removeItem(i)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
                     ))}
+                    {editItems.length === 0 && (
+                      <tr><td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af' }}>No items — add one below.</td></tr>
+                    )}
                   </tbody>
                 </table>
+
+                {/* Add item picker */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                  <select
+                    className="form-input"
+                    value={addItemProductId}
+                    onChange={e => setAddItemProductId(e.target.value)}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">+ Add another product…</option>
+                    {products
+                      .filter(p => !editItems.some(it => it.productId === p.id))
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — ₹{p.price}
+                          {salesmanStock.find(s => s.productId === p.id) ? ` (stock: ${salesmanStock.find(s => s.productId === p.id)?.quantity})` : ''}
+                        </option>
+                      ))}
+                  </select>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={addItemFromPicker} disabled={!addItemProductId}>
+                    Add
+                  </button>
+                </div>
+
                 <div style={{ marginTop: 8, fontWeight: 600 }}>
-                  Subtotal: ₹{editingSale.totalAmount.toLocaleString()} | After Discount: ₹{(editingSale.totalAmount - editForm.discount).toLocaleString()}
+                  Subtotal: ₹{editItems.reduce((s, it) => s + it.total, 0).toLocaleString()}
+                  {' | '}
+                  After Discount: ₹{(editItems.reduce((s, it) => s + it.total, 0) - editForm.discount).toLocaleString()}
                 </div>
               </div>
             </div>

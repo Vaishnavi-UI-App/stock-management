@@ -1188,10 +1188,16 @@ app.put('/api/sales/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Delete sale (pending by owner/admin, any by admin)
+// Soft-delete sale — bill row stays so the invoice number is never reused.
+// Allowed for owner OR stock_manager/account_manager on ANY status, with a reason.
 app.delete('/api/sales/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const reason = (req.body && req.body.reason ? String(req.body.reason) : '').trim();
+
+    if (!reason) {
+      return res.status(400).json({ error: 'A reason is required to delete a bill.' });
+    }
 
     const existingSale = await prisma.sale.findUnique({
       where: { id },
@@ -1201,53 +1207,65 @@ app.delete('/api/sales/:id', authMiddleware, async (req, res) => {
     if (!existingSale) {
       return res.status(404).json({ error: 'Sale not found' });
     }
+    if (existingSale.deletedAt) {
+      return res.status(400).json({ error: 'Bill already deleted' });
+    }
 
-    const isAdmin = req.user.role === 'stock_manager';
+    const isAdmin = ['stock_manager', 'account_manager'].includes(req.user.role);
     const isOwner = req.user.id === existingSale.salesmanId;
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    if (!isAdmin && existingSale.status !== 'pending') {
-      return res.status(403).json({ error: 'Only pending sales can be deleted' });
-    }
 
     await prisma.$transaction(async (tx) => {
-      // Restore salesman stock
-      for (const item of existingSale.items) {
-        await tx.salesmanStock.upsert({
-          where: {
-            salesmanId_productId: {
+      // Reverse stock/customer effects only if the sale was APPROVED (otherwise
+      // stock was never deducted and customer balance was never updated).
+      if (existingSale.status === 'approved') {
+        for (const item of existingSale.items) {
+          await tx.salesmanStock.upsert({
+            where: {
+              salesmanId_productId: {
+                salesmanId: existingSale.salesmanId,
+                productId: item.productId
+              }
+            },
+            update: { quantity: { increment: item.quantity } },
+            create: {
               salesmanId: existingSale.salesmanId,
-              productId: item.productId
+              branchId: existingSale.branchId,
+              productId: item.productId,
+              quantity: item.quantity
             }
-          },
-          update: { quantity: { increment: item.quantity } },
-          create: {
-            salesmanId: existingSale.salesmanId,
-            branchId: existingSale.branchId,
-            productId: item.productId,
-            quantity: item.quantity
-          }
-        });
+          });
+        }
+
+        if (existingSale.customerId) {
+          await tx.customer.update({
+            where: { id: existingSale.customerId },
+            data: {
+              currentBalance: { decrement: (existingSale.finalAmount - (existingSale.amountPaid || 0)) },
+              totalPurchases: { decrement: existingSale.finalAmount },
+              totalPaid: { decrement: (existingSale.amountPaid || 0) }
+            }
+          });
+        }
+
+        await tx.customerTransaction.deleteMany({ where: { saleId: existingSale.id } });
+        await tx.payment.deleteMany({ where: { saleId: existingSale.id } });
       }
 
-      if (existingSale.customerId) {
-        await tx.customer.update({
-          where: { id: existingSale.customerId },
-          data: {
-            currentBalance: { decrement: (existingSale.finalAmount - (existingSale.amountPaid || 0)) },
-            totalPurchases: { decrement: existingSale.finalAmount },
-            totalPaid: { decrement: (existingSale.amountPaid || 0) }
-          }
-        });
-      }
-
-      await tx.customerTransaction.deleteMany({ where: { saleId: existingSale.id } });
-      await tx.payment.deleteMany({ where: { saleId: existingSale.id } });
-      await tx.sale.delete({ where: { id: existingSale.id } });
+      // Mark the bill as deleted but KEEP the row (invoice numbers are never reused)
+      await tx.sale.update({
+        where: { id: existingSale.id },
+        data: {
+          deletedAt: new Date(),
+          deletedBy: req.user.id,
+          deleteReason: reason
+        }
+      });
     });
 
-    createAuditLog(req.user.id, 'DELETE', 'Sale', existingSale.id, null, { billNumber: existingSale.billNumber }, req.ip);
+    createAuditLog(req.user.id, 'DELETE', 'Sale', existingSale.id, null, { billNumber: existingSale.billNumber, reason }, req.ip);
     res.json({ message: 'Sale deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });

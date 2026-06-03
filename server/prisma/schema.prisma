@@ -375,6 +375,10 @@ model Sale {
   billLocation      String?       @db.Text
   saleDate        DateTime      @default(now())
   dueDate         DateTime?
+  // Soft delete — bills are NEVER hard-deleted, so invoice numbers are never reused
+  deletedAt       DateTime?
+  deletedBy       String?
+  deleteReason    String?       @db.Text
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 

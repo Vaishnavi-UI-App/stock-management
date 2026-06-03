@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Send, Plus, Users, Radio, User as UserIcon, X, Search, MessageSquare } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import {
@@ -355,7 +355,7 @@ export function Chat() {
                   { t: 'direct', label: 'Direct', icon: <UserIcon size={14} /> },
                   { t: 'group', label: 'Group', icon: <Users size={14} /> },
                   ...(canBroadcast ? [{ t: 'broadcast' as ChatConversationType, label: 'Broadcast', icon: <Radio size={14} /> }] : []),
-                ] as Array<{ t: ChatConversationType; label: string; icon: JSX.Element }>).map(o => (
+                ] as Array<{ t: ChatConversationType; label: string; icon: ReactNode }>).map(o => (
                   <button key={o.t}
                     onClick={() => { setNewChatType(o.t); setSelectedIds([]); }}
                     style={{

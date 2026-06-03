@@ -73,12 +73,12 @@ export function MyAttendance() {
     return `Lat: ${lat.toFixed(6)}, Lng: ${lon.toFixed(6)}`;
   };
 
-  const getGeoPosition = (highAccuracy: boolean): Promise<GeolocationPosition> => {
+  const getGeoPosition = (highAccuracy: boolean, timeoutMs: number, maxAgeMs: number): Promise<GeolocationPosition> => {
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        timeout: highAccuracy ? 10000 : 15000,
+        timeout: timeoutMs,
         enableHighAccuracy: highAccuracy,
-        maximumAge: 0
+        maximumAge: maxAgeMs
       });
     });
   };
@@ -90,29 +90,46 @@ export function MyAttendance() {
 
     let position: GeolocationPosition;
     try {
-      // Try high accuracy (GPS) first
-      position = await getGeoPosition(true);
+      // 1st try: cached location up to 5 min old, low accuracy — fast & works indoors
+      position = await getGeoPosition(false, 8000, 300000);
     } catch {
       try {
-        // Fall back to lower accuracy (network-based)
-        position = await getGeoPosition(false);
-      } catch (error: any) {
-        let msg = 'Location access is required for attendance.';
-        if (error.code === 1) {
-          msg = 'Location permission denied. Please enable location access in your browser settings:\n\n1. Click the lock icon in the address bar\n2. Set Location to "Allow"\n3. Refresh the page and try again';
-        } else if (error.code === 2) {
-          msg = 'Unable to determine your location. Please check your device GPS/location settings.';
-        } else if (error.code === 3) {
-          msg = 'Location request timed out. Please check your internet and GPS, then try again.';
+        // 2nd try: high accuracy (GPS), generous 25s timeout
+        position = await getGeoPosition(true, 25000, 60000);
+      } catch {
+        try {
+          // 3rd try: any low-accuracy reading with 30s timeout
+          position = await getGeoPosition(false, 30000, 600000);
+        } catch (error: any) {
+          let msg = 'Location access is required for attendance.';
+          if (error.code === 1) {
+            msg = 'Location permission denied. Please enable location access in your browser settings:\n\n1. Click the lock icon in the address bar\n2. Set Location to "Allow"\n3. Refresh the page and try again';
+          } else if (error.code === 2) {
+            msg = 'Unable to determine your location. Move closer to a window or step outside briefly, then try again. (Check GPS / Wi-Fi is on.)';
+          } else if (error.code === 3) {
+            msg = 'Location request timed out (we waited up to 30 seconds). Move closer to a window, check GPS/Wi-Fi is enabled, then try again.';
+          }
+          throw new Error(msg);
         }
-        throw new Error(msg);
       }
     }
 
     const { latitude, longitude, accuracy } = position.coords;
-    const address = await reverseGeocode(latitude, longitude);
     const accStr = accuracy ? `±${Math.round(accuracy)}m` : '';
-    return `${address}\nLat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)} (${accStr})`;
+    // Try reverse geocoding but never fail because of it — coordinates alone are enough
+    let address = '';
+    try {
+      address = await Promise.race<string>([
+        reverseGeocode(latitude, longitude),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('geocode timeout')), 5000)),
+      ]);
+    } catch {
+      address = '';
+    }
+    if (address) {
+      return `${address}\nLat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)} (${accStr})`;
+    }
+    return `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)} (${accStr})`;
   };
 
   const getDeviceInfo = () => {
@@ -139,6 +156,9 @@ export function MyAttendance() {
     // Then open camera
     setShowCamera(true);
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('camera-api-unavailable');
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } }
       });
@@ -146,8 +166,12 @@ export function MyAttendance() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-    } catch (err) {
-      alert('Camera access is required for attendance. Please enable camera permissions in your browser settings.');
+    } catch (err: any) {
+      const isInsecure = window.location.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+      const msg = isInsecure
+        ? 'Camera/location requires a secure (HTTPS) connection. Please open the site via https://dynamicindia.dynamiccropscience.de instead of the IP address.'
+        : 'Camera access is required for attendance. Please enable camera permissions in your browser settings.';
+      alert(msg);
       setShowCamera(false);
     }
   };

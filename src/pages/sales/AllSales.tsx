@@ -1,15 +1,44 @@
 import { useState, useRef } from 'react';
-import { Search, Eye, X, Download, Printer, Share2 } from 'lucide-react';
+import { Search, Eye, X, Download, Printer, Share2, Trash2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
+import { salesApi } from '../../services/api';
 import { format } from 'date-fns';
 import { TaxInvoice } from '../../components/TaxInvoice';
 import type { Sale } from '../../types';
 import './Sales.css';
 
 export function AllSales() {
-  const { sales, branches, getBranchById, getUserById, currentUser } = useStore();
+  const { sales, branches, getBranchById, getUserById, currentUser, fetchSales } = useStore();
+  const [deletingSale, setDeletingSale] = useState<Sale | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  const openDeleteModal = (sale: Sale) => {
+    setDeletingSale(sale);
+    setDeleteReason('');
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingSale) return;
+    const reason = deleteReason.trim();
+    if (!reason) {
+      alert('Please enter a reason — this is required to delete a bill.');
+      return;
+    }
+    setDeleteSubmitting(true);
+    try {
+      await salesApi.delete(deletingSale.id, reason);
+      await fetchSales();
+      setDeletingSale(null);
+      setDeleteReason('');
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete bill');
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -270,9 +299,14 @@ export function AllSales() {
                   const salesman = getUserById(sale.salesmanId);
 
                   return (
-                    <tr key={sale.id}>
+                    <tr key={sale.id} style={(sale as any).deletedAt ? { opacity: 0.55, background: '#fafafa' } : undefined}>
                       <td>
                         <span className="badge badge-primary">{sale.billNumber}</span>
+                        {(sale as any).deletedAt && (
+                          <span style={{ marginLeft: 6, padding: '2px 6px', borderRadius: 4, background: '#f1f5f9', color: '#475569', fontSize: 11, fontWeight: 600 }} title={(sale as any).deleteReason || 'Deleted'}>
+                            DELETED
+                          </span>
+                        )}
                       </td>
                       <td>
                         <div>{sale.customerName}</div>
@@ -312,7 +346,7 @@ export function AllSales() {
                           >
                             <Eye size={14} />
                           </button>
-                          {sale.status === 'approved' && (
+                          {!(sale as any).deletedAt && (
                             <>
                               <button
                                 className="btn btn-sm btn-primary"
@@ -336,6 +370,13 @@ export function AllSales() {
                               >
                                 <Printer size={14} />
                               </button>
+                              <button
+                                className="btn btn-sm btn-danger"
+                                onClick={() => openDeleteModal(sale)}
+                                title="Delete Bill"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </>
                           )}
                         </div>
@@ -354,6 +395,41 @@ export function AllSales() {
           </table>
         </div>
       </div>
+
+      {/* Delete Bill Modal */}
+      {deletingSale && (
+        <div className="modal-overlay" onClick={() => !deleteSubmitting && setDeletingSale(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Delete Bill #{deletingSale.billNumber}</h3>
+              <button className="modal-close" onClick={() => !deleteSubmitting && setDeletingSale(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: '#475569', marginBottom: 12 }}>
+                The bill will be marked as <b>Deleted</b> and kept in records.
+                Invoice number <b>{deletingSale.billNumber}</b> will not be reused.
+              </p>
+              <div className="form-group">
+                <label className="form-label">Reason for deletion <span style={{ color: '#dc2626' }}>*</span></label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  placeholder="Enter the reason — required"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setDeletingSale(null)} disabled={deleteSubmitting}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleDeleteConfirm} disabled={deleteSubmitting || !deleteReason.trim()}>
+                {deleteSubmitting ? 'Deleting...' : 'Delete Bill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* View Sale Modal */}
       {viewedSale && (

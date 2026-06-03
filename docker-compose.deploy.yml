@@ -1,0 +1,52 @@
+# Production deploy file — uses prebuilt images from Docker Hub (psittech/*).
+# Same service names, ports, env, and volumes as docker-compose.yml so the
+# existing /var/lib/dynamic-mysql data is reused — no DB recreation.
+services:
+  frontend:
+    image: psittech/dynamic-frontend:latest
+    container_name: dynamicinventory
+    ports:
+      - "8083:80"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - dynamic-net
+
+  backend:
+    image: psittech/dynamic-backend:latest
+    container_name: dynamic-backend
+    ports:
+      - "3101:3001"
+    environment:
+      - DATABASE_URL=mysql://root:${MYSQL_ROOT_PASSWORD}@database:3306/${MYSQL_DATABASE}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=3001
+      - NODE_ENV=production
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: always
+    networks:
+      - dynamic-net
+
+  database:
+    image: mysql:8.0
+    container_name: dynamic-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+    volumes:
+      - /var/lib/dynamic-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - dynamic-net
+
+networks:
+  dynamic-net:
+    driver: bridge

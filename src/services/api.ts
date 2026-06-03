@@ -3,6 +3,21 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 // Get token from localStorage
 const getToken = () => localStorage.getItem('token');
 
+// Clear the persisted session and send the user back to login.
+// Called when the server rejects our token (expired / invalid). Because auth
+// state is persisted client-side, the UI can otherwise look "logged in" with a
+// dead token and every authenticated request fails with "Invalid token".
+let handlingExpiredSession = false;
+const handleExpiredSession = () => {
+  if (handlingExpiredSession) return;
+  handlingExpiredSession = true;
+  localStorage.removeItem('token');
+  localStorage.removeItem('stock-management-store');
+  localStorage.removeItem('gps-tracking-state');
+  // Full reload drops all in-memory state and lands on the login screen.
+  window.location.href = '/login';
+};
+
 // API request helper
 async function apiRequest<T>(
   endpoint: string,
@@ -23,6 +38,12 @@ async function apiRequest<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    // Session is no longer valid on the server — force a clean re-login so the
+    // user gets a fresh token instead of repeatedly hitting "Invalid token".
+    if (response.status === 401) {
+      handleExpiredSession();
+      throw new Error(error.error || 'Your session has expired. Please log in again.');
+    }
     throw new Error(error.error || 'Request failed');
   }
 
@@ -217,8 +238,11 @@ export const salesApi = {
       body: JSON.stringify(saleData),
     }),
 
-  delete: (id: string) =>
-    apiRequest<void>(`/sales/${id}`, { method: 'DELETE' }),
+  delete: (id: string, reason: string) =>
+    apiRequest<void>(`/sales/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason }),
+    }),
 
   getPendingSales: () => apiRequest<any[]>('/sales/pending/all'),
 

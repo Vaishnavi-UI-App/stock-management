@@ -29,14 +29,14 @@ async function buildPdf(element: HTMLElement): Promise<jsPDF> {
   return pdf;
 }
 
-export async function downloadPdfFromRef(ref: RefObject<HTMLElement>, fileName: string): Promise<void> {
+export async function downloadPdfFromRef(ref: RefObject<HTMLElement | null>, fileName: string): Promise<void> {
   if (!ref.current) return;
   const pdf = await buildPdf(ref.current);
   pdf.save(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`);
 }
 
 export async function shareWhatsAppFromRef(
-  ref: RefObject<HTMLElement>,
+  ref: RefObject<HTMLElement | null>,
   fileName: string,
   shareText: string,
   fallbackPhone?: string,
