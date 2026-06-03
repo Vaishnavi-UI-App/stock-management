@@ -4775,13 +4775,18 @@ app.post('/api/chat/conversations/:id/read', authMiddleware, async (req, res) =>
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Start server only when run directly (not when imported by tests)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+}
+
+// Exported for tests (supertest mounts `app`; helpers tested in isolation)
+module.exports = { app, prisma, generateNextDocNumber };
