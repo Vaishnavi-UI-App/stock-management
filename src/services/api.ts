@@ -54,9 +54,12 @@ async function apiRequest<T>(
 
 export const authApi = {
   login: (email: string, password: string) =>
+    // Trim both fields: browsers/password managers often append a stray space,
+    // and the backend compares the password byte-for-byte (bcrypt), so an
+    // invisible trailing space would otherwise cause a false "invalid password".
     apiRequest<{ user: any; token: string }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: email.trim(), password: password.trim() }),
     }),
 
   getCurrentUser: () => apiRequest<any>('/auth/me'),
