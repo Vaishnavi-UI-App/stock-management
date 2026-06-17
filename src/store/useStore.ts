@@ -217,17 +217,39 @@ export const useStore = create<AppState>()(
       },
 
       fetchAllData: async () => {
+        const user = get().currentUser;
         set({ isLoading: true });
         try {
-          await Promise.all([
-            get().fetchUsers(),
-            get().fetchBranches(),
-            get().fetchProducts(),
-            get().fetchCompanyStock(),
-            get().fetchBranchStock(),
-            get().fetchSalesmanStock(),
-            get().fetchSales()
-          ]);
+          // Only load the data the current role actually uses on the dashboard.
+          // Salesmen and branch managers fetch their own scoped sales/stock from
+          // the server instead of the entire company dataset; other pages fetch
+          // what they need on mount. Admins still get the full dataset.
+          if (user?.role === 'salesman') {
+            await Promise.all([
+              get().fetchProducts(),
+              get().fetchSalesmanStock(user.id),
+              get().fetchSales({ salesmanId: user.id }),
+            ]);
+          } else if (user?.role === 'branch_manager') {
+            await Promise.all([
+              get().fetchProducts(),
+              get().fetchBranches(),
+              get().fetchUsers(),
+              get().fetchBranchStock(user.branchId),
+              get().fetchSales({ branchId: user.branchId }),
+            ]);
+          } else {
+            // stock_manager / account_manager — full dataset
+            await Promise.all([
+              get().fetchUsers(),
+              get().fetchBranches(),
+              get().fetchProducts(),
+              get().fetchCompanyStock(),
+              get().fetchBranchStock(),
+              get().fetchSalesmanStock(),
+              get().fetchSales()
+            ]);
+          }
         } finally {
           set({ isLoading: false });
         }

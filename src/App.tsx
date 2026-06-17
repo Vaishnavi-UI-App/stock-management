@@ -1,53 +1,61 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import { Layout } from './components/layout/Layout';
 import { Login } from './pages/auth/Login';
-import { Dashboard } from './pages/dashboard/Dashboard';
-import { Products } from './pages/stock/Products';
-import { CompanyStock } from './pages/stock/CompanyStock';
-import { BranchStock } from './pages/stock/BranchStock';
-import { Branches } from './pages/stock/Branches';
-import { Users } from './pages/stock/Users';
-import { TakeProduct } from './pages/sales/TakeProduct';
-import { CreateBill } from './pages/sales/CreateBill';
-import { MySales } from './pages/sales/MySales';
-import { MyStock } from './pages/sales/MyStock';
-import { MyOrders } from './pages/sales/MyOrders';
-import { MyExpenditures } from './pages/sales/MyExpenditures';
-import { AllSales } from './pages/sales/AllSales';
-import { BranchInventory } from './pages/sales/BranchInventory';
-import { Salesmen } from './pages/sales/Salesmen';
-import { Reports } from './pages/reports/Reports';
-import { Accounts } from './pages/accounts/Accounts';
-import { CustomerLedger } from './pages/accounts/CustomerLedger';
-import { Expenditures } from './pages/admin/Expenditures';
-import { OrganizationMaster } from './pages/admin/OrganizationMaster';
-import { AttendanceManagement } from './pages/admin/AttendanceManagement';
-import { MyAttendance } from './pages/attendance/MyAttendance';
-import { Profile } from './pages/profile/Profile';
-import { Orders } from './pages/orders/Orders';
-import { Chat } from './pages/chat/Chat';
+
+// Lazily load each page so a user only downloads the code for the pages their
+// role can reach. Helper maps named exports to the default export lazy() wants.
+const page = <T extends Record<string, React.ComponentType<any>>>(
+  loader: () => Promise<T>,
+  name: keyof T,
+) => lazy(() => loader().then((m) => ({ default: m[name] })));
+
+const Dashboard = page(() => import('./pages/dashboard/Dashboard'), 'Dashboard');
+const Products = page(() => import('./pages/stock/Products'), 'Products');
+const CompanyStock = page(() => import('./pages/stock/CompanyStock'), 'CompanyStock');
+const BranchStock = page(() => import('./pages/stock/BranchStock'), 'BranchStock');
+const Branches = page(() => import('./pages/stock/Branches'), 'Branches');
+const Users = page(() => import('./pages/stock/Users'), 'Users');
+const TakeProduct = page(() => import('./pages/sales/TakeProduct'), 'TakeProduct');
+const CreateBill = page(() => import('./pages/sales/CreateBill'), 'CreateBill');
+const MySales = page(() => import('./pages/sales/MySales'), 'MySales');
+const MyStock = page(() => import('./pages/sales/MyStock'), 'MyStock');
+const MyOrders = page(() => import('./pages/sales/MyOrders'), 'MyOrders');
+const MyExpenditures = page(() => import('./pages/sales/MyExpenditures'), 'MyExpenditures');
+const AllSales = page(() => import('./pages/sales/AllSales'), 'AllSales');
+const BranchInventory = page(() => import('./pages/sales/BranchInventory'), 'BranchInventory');
+const Salesmen = page(() => import('./pages/sales/Salesmen'), 'Salesmen');
+const Reports = page(() => import('./pages/reports/Reports'), 'Reports');
+const Accounts = page(() => import('./pages/accounts/Accounts'), 'Accounts');
+const CustomerLedger = page(() => import('./pages/accounts/CustomerLedger'), 'CustomerLedger');
+const Expenditures = page(() => import('./pages/admin/Expenditures'), 'Expenditures');
+const OrganizationMaster = page(() => import('./pages/admin/OrganizationMaster'), 'OrganizationMaster');
+const AttendanceManagement = page(() => import('./pages/admin/AttendanceManagement'), 'AttendanceManagement');
+const MyAttendance = page(() => import('./pages/attendance/MyAttendance'), 'MyAttendance');
+const Profile = page(() => import('./pages/profile/Profile'), 'Profile');
+const Orders = page(() => import('./pages/orders/Orders'), 'Orders');
+const Chat = page(() => import('./pages/chat/Chat'), 'Chat');
 // New Feature Pages
-import { GSTReports } from './pages/admin/GSTReports';
-import { SalesReturns } from './pages/admin/SalesReturns';
-import { StockAlerts } from './pages/admin/StockAlerts';
-import { PayrollProcessing } from './pages/admin/PayrollProcessing';
-import { Notifications } from './pages/admin/Notifications';
-import { ExpiryTracking } from './pages/admin/ExpiryTracking';
-import { PurchaseManagement } from './pages/admin/PurchaseManagement';
-import { LanguageSettings } from './pages/admin/LanguageSettings';
-import { LeaveManagement } from './pages/admin/LeaveManagement';
-import { MyLeaves } from './pages/sales/MyLeaves';
-import { DamageTracking } from './pages/admin/DamageTracking';
-import { AuditLog } from './pages/admin/AuditLog';
-import { RouteTracking } from './pages/admin/RouteTracking';
-import { MyRoute } from './pages/sales/MyRoute';
-import { DealerApplication } from './pages/admin/DealerApplication';
-import { PaymentReceived } from './pages/accounts/PaymentReceived';
-import { Meeting } from './pages/admin/Meeting';
-import { StockUpdateRequests } from './pages/admin/StockUpdateRequests';
-import { AllBranchStockView } from './pages/sales/AllBranchStockView';
+const GSTReports = page(() => import('./pages/admin/GSTReports'), 'GSTReports');
+const SalesReturns = page(() => import('./pages/admin/SalesReturns'), 'SalesReturns');
+const StockAlerts = page(() => import('./pages/admin/StockAlerts'), 'StockAlerts');
+const PayrollProcessing = page(() => import('./pages/admin/PayrollProcessing'), 'PayrollProcessing');
+const Notifications = page(() => import('./pages/admin/Notifications'), 'Notifications');
+const ExpiryTracking = page(() => import('./pages/admin/ExpiryTracking'), 'ExpiryTracking');
+const PurchaseManagement = page(() => import('./pages/admin/PurchaseManagement'), 'PurchaseManagement');
+const LanguageSettings = page(() => import('./pages/admin/LanguageSettings'), 'LanguageSettings');
+const LeaveManagement = page(() => import('./pages/admin/LeaveManagement'), 'LeaveManagement');
+const MyLeaves = page(() => import('./pages/sales/MyLeaves'), 'MyLeaves');
+const DamageTracking = page(() => import('./pages/admin/DamageTracking'), 'DamageTracking');
+const AuditLog = page(() => import('./pages/admin/AuditLog'), 'AuditLog');
+const RouteTracking = page(() => import('./pages/admin/RouteTracking'), 'RouteTracking');
+const MyRoute = page(() => import('./pages/sales/MyRoute'), 'MyRoute');
+const DealerApplication = page(() => import('./pages/admin/DealerApplication'), 'DealerApplication');
+const PaymentReceived = page(() => import('./pages/accounts/PaymentReceived'), 'PaymentReceived');
+const Meeting = page(() => import('./pages/admin/Meeting'), 'Meeting');
+const StockUpdateRequests = page(() => import('./pages/admin/StockUpdateRequests'), 'StockUpdateRequests');
+const AllBranchStockView = page(() => import('./pages/sales/AllBranchStockView'), 'AllBranchStockView');
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
@@ -76,6 +84,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading…</div>}>
       <Routes>
         {/* Public Routes */}
         <Route
@@ -341,6 +350,7 @@ function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
