@@ -71,6 +71,10 @@ model User {
   password         String
   role             UserRole
   phone            String
+  // Password reset / first-time setup
+  resetToken         String?   @unique
+  resetTokenExpiry   DateTime?
+  mustChangePassword Boolean   @default(false)
   branchId         String?
   branch           Branch?  @relation(fields: [branchId], references: [id])
   // Additional employee fields

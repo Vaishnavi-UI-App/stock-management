@@ -4,12 +4,40 @@ const dotenv = require('dotenv');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const { sendMail } = require('./email');
 
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
+
+// Base URL of the frontend, used to build links inside emails (password setup,
+// reset, etc.). Override via APP_URL in .env for production (e.g. https://erp.dynamiccrops.com).
+const APP_URL = (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+
+// Generate a URL-safe random token for password-setup / reset links.
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Strip sensitive fields (password hash, reset token) before returning a user.
+function sanitizeUser(user) {
+  if (!user) return user;
+  const { password, resetToken, resetTokenExpiry, ...safe } = user;
+  return safe;
+}
+
+// Generate a readable temporary password (no ambiguous chars) for the
+// forgot-password flow.
+function generateTempPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let out = '';
+  const bytes = crypto.randomBytes(10);
+  for (let i = 0; i < 10; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
 
 // Middleware
 app.use(cors());
@@ -83,13 +111,10 @@ app.post('/api/auth/login', async (req, res) => {
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
-
     // Audit log for login
     createAuditLog(user.id, 'LOGIN', 'User', user.id, null, { email: user.email }, req.ip);
 
-    res.json({ user: userWithoutPassword, token });
+    res.json({ user: sanitizeUser(user), token });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -97,8 +122,129 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Get current user
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
-  const { password: _, ...userWithoutPassword } = req.user;
-  res.json(userWithoutPassword);
+  res.json(sanitizeUser(req.user));
+});
+
+// Forgot password — generates a new temporary password, emails it, and forces a
+// change on next login. Always returns a generic success so the endpoint can't
+// be used to discover which emails have accounts.
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim();
+    const genericMessage = 'If an account with that email exists, a temporary password has been sent to it.';
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user) {
+      const tempPassword = generateTempPassword();
+      const hashed = await bcrypt.hash(tempPassword, 10);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashed, mustChangePassword: true, resetToken: null, resetTokenExpiry: null },
+      });
+
+      await sendMail({
+        to: user.email,
+        subject: 'Your DynamicIndia ERP temporary password',
+        text:
+          `Hello ${user.name},\n\n` +
+          `A password reset was requested for your DynamicIndia ERP account.\n\n` +
+          `Your temporary password is: ${tempPassword}\n\n` +
+          `Please log in at ${APP_URL}/login and change your password immediately from your profile.\n\n` +
+          `If you did not request this, please contact your administrator.`,
+      });
+
+      createAuditLog(user.id, 'PASSWORD_RESET', 'User', user.id, null, { email: user.email }, req.ip);
+    }
+
+    res.json({ message: genericMessage });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Change password — for a logged-in user. Requires the current password.
+app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, req.user.password);
+    if (!isValid) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { password: hashed, mustChangePassword: false, resetToken: null, resetTokenExpiry: null },
+    });
+
+    createAuditLog(req.user.id, 'PASSWORD_CHANGE', 'User', req.user.id, null, null, req.ip);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Verify a password-setup / reset token (used by the set-password page to show
+// the account email and validate the link before the user submits).
+app.get('/api/auth/set-password/:token', async (req, res) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { resetToken: req.params.token, resetTokenExpiry: { gt: new Date() } },
+      select: { email: true, name: true },
+    });
+    if (!user) {
+      return res.status(400).json({ valid: false, error: 'This link is invalid or has expired.' });
+    }
+    res.json({ valid: true, email: user.email, name: user.name });
+  } catch (error) {
+    res.status(500).json({ valid: false, error: error.message });
+  }
+});
+
+// Set a password from a setup / reset link token.
+app.post('/api/auth/set-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { resetToken: token, resetTokenExpiry: { gt: new Date() } },
+    });
+    if (!user) {
+      return res.status(400).json({ error: 'This link is invalid or has expired.' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashed, mustChangePassword: false, resetToken: null, resetTokenExpiry: null },
+    });
+
+    createAuditLog(user.id, 'PASSWORD_SET', 'User', user.id, null, { email: user.email }, req.ip);
+
+    res.json({ message: 'Password set successfully. You can now log in.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ==================== USER ROUTES ====================
@@ -110,8 +256,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
       include: { branch: true },
       orderBy: { createdAt: 'desc' }
     });
-    const usersWithoutPasswords = users.map(({ password, ...user }) => user);
-    res.json(usersWithoutPasswords);
+    res.json(users.map(sanitizeUser));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -121,7 +266,10 @@ app.get('/api/users', authMiddleware, async (req, res) => {
 app.post('/api/users', authMiddleware, async (req, res) => {
   try {
     const { password, ...userData } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Password is optional: if the admin leaves it blank, we create the account
+    // with a random unusable password and let the user set their own via the
+    // emailed setup link.
+    const hashedPassword = await bcrypt.hash(password || generateToken(), 10);
 
     // Only allow known User model fields
     const allowedFields = [
@@ -168,16 +316,42 @@ app.post('/api/users', authMiddleware, async (req, res) => {
       }
     }
 
+    // Create a first-time password-setup token (valid 7 days) so the new user
+    // can set their own password via an emailed link.
+    const setupToken = generateToken();
+    const setupTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
     const user = await prisma.user.create({
-      data: { ...cleanData, password: hashedPassword },
+      data: {
+        ...cleanData,
+        password: hashedPassword,
+        resetToken: setupToken,
+        resetTokenExpiry: setupTokenExpiry,
+        mustChangePassword: true,
+      },
       include: { branch: true }
     });
-    const { password: _, ...userWithoutPassword } = user;
+    const setupUrl = `${APP_URL}/set-password/${setupToken}`;
+
+    // Email the new user a link to set their own password.
+    const emailResult = await sendMail({
+      to: user.email,
+      subject: 'Welcome to DynamicIndia ERP — set your password',
+      text:
+        `Hello ${user.name},\n\n` +
+        `An account has been created for you on DynamicIndia ERP.\n\n` +
+        `Please set your password using the link below (valid for 7 days):\n` +
+        `${setupUrl}\n\n` +
+        `After setting your password, log in at ${APP_URL}/login with your email: ${user.email}\n\n` +
+        `Thank you!`,
+    });
 
     // Audit log
     createAuditLog(req.user.id, 'CREATE', 'User', user.id, null, { name: user.name, email: user.email, role: user.role }, req.ip);
 
-    res.status(201).json(userWithoutPassword);
+    // Return the setup link so the admin UI can also share it directly (useful
+    // when email delivery is not configured).
+    res.status(201).json({ ...sanitizeUser(user), setupUrl, emailSent: emailResult.sent });
   } catch (error) {
     if (error.code === 'P2002') {
       return res.status(400).json({ error: `A user with this ${error.meta?.target?.[0] || 'value'} already exists` });
@@ -250,12 +424,11 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
       data: cleanData,
       include: { branch: true }
     });
-    const { password: _, ...userWithoutPassword } = user;
 
     // Audit log
     createAuditLog(req.user.id, 'UPDATE', 'User', id, null, { name: user.name, role: user.role }, req.ip);
 
-    res.json(userWithoutPassword);
+    res.json(sanitizeUser(user));
   } catch (error) {
     if (error.code === 'P2002') {
       return res.status(400).json({ error: `A user with this ${error.meta?.target?.[0] || 'value'} already exists` });
