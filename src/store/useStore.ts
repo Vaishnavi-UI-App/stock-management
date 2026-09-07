@@ -221,16 +221,19 @@ export const useStore = create<AppState>()(
         set({ isLoading: true });
         try {
           // Only load the data the current role actually uses on the dashboard.
-          // Salesmen and branch managers fetch their own scoped sales/stock from
-          // the server instead of the entire company dataset; other pages fetch
-          // what they need on mount. Admins still get the full dataset.
-          if (user?.role === 'salesman') {
+          // Roles scoped to their own records or their own branch fetch scoped
+          // sales/stock from the server instead of the entire company dataset;
+          // other pages fetch what they need on mount. Roles scoped to 'all'
+          // (or with no dataScope set) still get the full dataset.
+          if (user?.dataScope === 'own_records') {
+            // own_records ≈ old salesman tier
             await Promise.all([
               get().fetchProducts(),
               get().fetchSalesmanStock(user.id),
               get().fetchSales({ salesmanId: user.id }),
             ]);
-          } else if (user?.role === 'branch_manager') {
+          } else if (user?.dataScope === 'own_branch') {
+            // own_branch ≈ old branch_manager tier
             await Promise.all([
               get().fetchProducts(),
               get().fetchBranches(),
@@ -239,7 +242,7 @@ export const useStore = create<AppState>()(
               get().fetchSales({ branchId: user.branchId }),
             ]);
           } else {
-            // stock_manager / account_manager — full dataset
+            // 'all' (or unset) — full dataset
             await Promise.all([
               get().fetchUsers(),
               get().fetchBranches(),

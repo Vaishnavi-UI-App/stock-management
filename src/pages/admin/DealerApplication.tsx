@@ -54,8 +54,8 @@ const statusBadge = (status: DealerApplicationStatus) => {
 export function DealerApplication() {
   const { currentUser } = useStore();
   const salesmanName = currentUser?.name || '';
-  const isAdmin = currentUser?.role === 'stock_manager' || currentUser?.role === 'account_manager';
-  const isManager = currentUser?.role === 'branch_manager';
+  const isAdmin = currentUser?.dataScope === 'all';
+  const isManager = currentUser?.dataScope === 'own_branch';
   const canEditApp = (app: DealerAppType) =>
     app.status !== 'approved' && (app.userId === currentUser?.id || isAdmin || isManager);
 

@@ -10,7 +10,8 @@ import {
   DollarSign,
   ShoppingCart,
   Activity,
-  Map as MapIcon
+  Map as MapIcon,
+  ArrowLeftRight
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { gpsApi } from '../../services/api';
@@ -35,6 +36,8 @@ export function RouteTracking() {
   const [view, setView] = useState<'live' | 'history'>('live');
   const [customerLocations, setCustomerLocations] = useState<any[]>([]);
   const [routePoints, setRoutePoints] = useState<LocationPoint[]>([]);
+  const [compareAId, setCompareAId] = useState<string>('');
+  const [compareBId, setCompareBId] = useState<string>('');
 
   useEffect(() => {
     fetchLiveData();
@@ -116,6 +119,35 @@ export function RouteTracking() {
     return isOnline ? '#22c55e' : '#94a3b8';
   };
 
+  // Tapping a marker on the map both opens its details (as before) and toggles it
+  // into the compare-distance pair, so tapping two markers draws a line between them.
+  const handleMapTap = (id: string) => {
+    setSelectedSalesman(selectedSalesman === id ? null : id);
+    if (compareAId === id) {
+      setCompareAId('');
+    } else if (compareBId === id) {
+      setCompareBId('');
+    } else if (!compareAId) {
+      setCompareAId(id);
+    } else if (!compareBId) {
+      setCompareBId(id);
+    } else {
+      setCompareAId(id);
+    }
+  };
+
+  // Straight-line (as-the-crow-flies) distance between two GPS points, in km
+  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   const getOutcomeLabel = (outcome?: string) => {
     const labels: Record<string, string> = {
       'order_placed': 'Order Placed',
@@ -149,6 +181,21 @@ export function RouteTracking() {
   const totalHoursToday = liveData.reduce((sum, d) => sum + (d.todayStats.totalHours || 0), 0);
 
   const selectedSalesmanData = liveData.find(d => d.salesman.id === selectedSalesman);
+
+  // All salesmen ranked by distance covered today (highest first)
+  const distanceRanking = [...liveData].sort((a, b) => b.todayStats.distanceKm - a.todayStats.distanceKm);
+
+  const compareA = liveData.find(d => d.salesman.id === compareAId) || null;
+  const compareB = liveData.find(d => d.salesman.id === compareBId) || null;
+  const compareApartKm = (compareA?.lastLocation && compareB?.lastLocation)
+    ? haversineKm(
+        compareA.lastLocation.latitude, compareA.lastLocation.longitude,
+        compareB.lastLocation.latitude, compareB.lastLocation.longitude
+      )
+    : null;
+  const compareTraveledDiffKm = (compareA && compareB)
+    ? Math.abs(compareA.todayStats.distanceKm - compareB.todayStats.distanceKm)
+    : null;
 
   if (loading) {
     return (
@@ -244,6 +291,114 @@ export function RouteTracking() {
         </div>
       </div>
 
+      {/* Distance Comparison */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+        {/* Distance ranking - all salesmen */}
+        <div className="card">
+          <div className="card-header">
+            <h2 style={{ fontSize: '0.875rem' }}>
+              <TrendingUp size={16} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
+              Distance Covered - All Salesmen {view === 'live' ? '(Today)' : `(${format(new Date(selectedDate), 'dd MMM yyyy')})`}
+            </h2>
+          </div>
+          <div className="card-body" style={{ maxHeight: '280px', overflowY: 'auto', padding: 0 }}>
+            {distanceRanking.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>No data</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <tbody>
+                  {distanceRanking.map((item, index) => (
+                    <tr
+                      key={item.salesman.id}
+                      style={{ borderBottom: '1px solid #f1f5f9' }}
+                    >
+                      <td style={{ padding: '0.5rem 0.75rem', color: '#94a3b8', width: '2rem' }}>{index + 1}</td>
+                      <td style={{ padding: '0.5rem 0.75rem' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: getStatusColor(item.isOnline),
+                            marginRight: '0.5rem',
+                          }}
+                        />
+                        {item.salesman.name}
+                      </td>
+                      <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 600 }}>
+                        {item.todayStats.distanceKm.toFixed(1)} km
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Compare two salesmen */}
+        <div className="card">
+          <div className="card-header">
+            <h2 style={{ fontSize: '0.875rem' }}>
+              <ArrowLeftRight size={16} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
+              Compare Two Salesmen
+            </h2>
+          </div>
+          <div className="card-body">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              <select
+                className="form-input"
+                value={compareAId}
+                onChange={(e) => setCompareAId(e.target.value)}
+              >
+                <option value="">Select user 1...</option>
+                {liveData.map((item) => (
+                  <option key={item.salesman.id} value={item.salesman.id}>{item.salesman.name}</option>
+                ))}
+              </select>
+              <select
+                className="form-input"
+                value={compareBId}
+                onChange={(e) => setCompareBId(e.target.value)}
+              >
+                <option value="">Select user 2...</option>
+                {liveData.map((item) => (
+                  <option key={item.salesman.id} value={item.salesman.id}>{item.salesman.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {compareA && compareB ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#64748b' }}>{compareA.salesman.name} - distance traveled</span>
+                  <strong>{compareA.todayStats.distanceKm.toFixed(1)} km</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#64748b' }}>{compareB.salesman.name} - distance traveled</span>
+                  <strong>{compareB.todayStats.distanceKm.toFixed(1)} km</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+                  <span style={{ color: '#64748b' }}>Difference in distance traveled</span>
+                  <strong>{compareTraveledDiffKm!.toFixed(1)} km</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#64748b' }}>Distance apart right now</span>
+                  <strong>
+                    {compareApartKm != null ? `${compareApartKm.toFixed(1)} km` : 'Location unavailable'}
+                  </strong>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                Select two salesmen to compare
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Map + Sidebar */}
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
         {/* Sidebar - Salesman List */}
@@ -321,14 +476,27 @@ export function RouteTracking() {
                 <span style={{ fontWeight: '400', color: '#64748b' }}> - {selectedSalesmanData.salesman.name}</span>
               )}
             </h2>
+            {(compareAId || compareBId) ? (
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '0.25rem 0.625rem', fontSize: '0.75rem' }}
+                onClick={() => { setCompareAId(''); setCompareBId(''); }}
+              >
+                Clear compare
+              </button>
+            ) : (
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Tap two markers to see distance apart</span>
+            )}
           </div>
           <LiveTrackingMap
             salesmen={liveData}
             selectedSalesmanId={selectedSalesman}
-            onSelectSalesman={(id) => setSelectedSalesman(selectedSalesman === id ? null : id)}
+            onSelectSalesman={handleMapTap}
             customerLocations={customerLocations}
             routePoints={selectedSalesman ? routePoints : []}
             visits={selectedSalesman ? visits : []}
+            compareAId={compareAId}
+            compareBId={compareBId}
             height="500px"
           />
         </div>

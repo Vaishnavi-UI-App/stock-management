@@ -36,7 +36,7 @@ export function Meeting() {
   }, []);
 
   const visibleMeetings = useMemo(() => {
-    if (currentUser?.role === 'stock_manager') return meetings;
+    if (currentUser?.dataScope === 'all') return meetings;
     return meetings.filter((m) => m.employeeIds.includes(currentUser?.id || ''));
   }, [meetings, currentUser?.id, currentUser?.role]);
 
@@ -84,7 +84,7 @@ export function Meeting() {
         </div>
       </div>
 
-      {(currentUser?.role === 'stock_manager' || currentUser?.role === 'branch_manager') && (
+      {(currentUser?.dataScope === 'all' || currentUser?.dataScope === 'own_branch') && (
         <div className="card" style={{ marginBottom: 16 }}>
           <h3 style={{ marginBottom: 12 }}>Schedule Meeting</h3>
           <div className="form-row">
@@ -110,7 +110,7 @@ export function Meeting() {
           <div className="form-group">
             <label className="form-label">Select Employees</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
-              {users.filter((u) => u.role !== 'stock_manager').map((u) => (
+              {users.filter((u) => u.dataScope !== 'all').map((u) => (
                 <label key={u.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="checkbox" checked={employeeIds.includes(u.id)} onChange={() => toggleEmployee(u.id)} />
                   <span>{u.name}</span>

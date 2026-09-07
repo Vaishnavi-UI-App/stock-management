@@ -1,45 +1,73 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
   Package,
   Users,
-  Building2,
   ShoppingCart,
-  FileText,
-  BarChart3,
   LogOut,
   Menu,
   X,
   ChevronRight,
-  Truck,
   Calculator,
-  UserCircle,
   Wallet,
-  ClipboardList,
   Receipt,
-  Landmark,
   Clock,
+  Settings as SettingsIcon,
   // New feature icons
-  RotateCcw,
-  AlertTriangle,
   DollarSign,
-  Bell,
-  CalendarClock,
   ShoppingBag,
-  Globe,
-  CalendarDays,
-  Trash2,
-  ScrollText,
+  Send,
   Navigation,
   Handshake,
-  CircleDollarSign,
-  Video,
-  MessageSquare
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useLanguage } from '../../i18n/useLanguage';
 import './Layout.css';
+
+// Union of every menu item that used to be hardcoded per-role. Filtered at
+// render time by `currentUser.permissions[item.module].view`. One canonical
+// path is listed per module — some modules are reachable via several role-
+// specific URLs (see src/constants/modules.ts / rbac-module-map), all of
+// which remain valid routes, just not all individually listed here.
+interface MenuItemDef {
+  path: string;
+  icon: LucideIcon;
+  label: string;
+  module: string;
+  // Pages that fold multiple modules into one sidebar entry (e.g. Attendance
+  // Mgmt hosts both Attendance and Leave Management as tabs) are visible if
+  // the user has view access to ANY of these, not just `module`.
+  anyModule?: string[];
+}
+
+const ALL_MENU_ITEMS: MenuItemDef[] = [
+  { path: '/products', icon: Package, label: 'Products', module: 'products', anyModule: ['products', 'companyStock', 'stockAlerts', 'expiryTracking', 'damageTracking'] },
+  { path: '/users', icon: Users, label: 'Employee', module: 'users' },
+  { path: '/expenditures', icon: Receipt, label: 'Expenditures', module: 'expenditures' },
+  { path: '/customer-ledger', icon: Wallet, label: 'Customer Ledger', module: 'customerLedger' },
+  { path: '/accounts', icon: Calculator, label: 'Accounts', module: 'accounts', anyModule: ['accounts', 'gstReports', 'reports', 'paymentReceived', 'purchases', 'salesReturns'] },
+  { path: '/all-sales', icon: ShoppingCart, label: 'Sales', module: 'sales' },
+  { path: '/payroll', icon: DollarSign, label: 'Payroll', module: 'payroll' },
+  { path: '/purchases', icon: ShoppingBag, label: 'Purchases', module: 'purchases' },
+  { path: '/route-tracking', icon: Navigation, label: 'Route Tracking', module: 'routeTracking' },
+  { path: '/dealer-application', icon: Handshake, label: 'Dealer Application', module: 'dealerApplication' },
+];
+
+// Always visible for any authenticated user, regardless of permissions —
+// same treatment dashboard/profile already had. Personal account features
+// only, not business modules — those are all in ALL_MENU_ITEMS above now.
+const ALWAYS_VISIBLE_ITEMS: MenuItemDef[] = [
+  { path: '/attendance-management', icon: Clock, label: 'Attendance Mgmt', module: '' },
+  // No permission needed — every user gets self-service order creation. The
+  // Orders tab inside this page (permission-gated approve/manage-all view)
+  // only shows for users with 'orders' view access.
+  { path: '/my-orders', icon: Send, label: 'My Orders', module: '' },
+];
+
+// Always the last item in the sidebar, after every permission-gated entry.
+const SETTINGS_ITEM: MenuItemDef = { path: '/settings', icon: SettingsIcon, label: 'Settings', module: '' };
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -58,108 +86,17 @@ export function Layout({ children }: LayoutProps) {
   };
 
   const getMenuItems = () => {
-    const baseItems = [
-      { path: '/dashboard', icon: LayoutDashboard, label: t.dashboard },
-      { path: '/profile', icon: UserCircle, label: t.profile },
+    const baseItems: MenuItemDef[] = [
+      { path: '/dashboard', icon: LayoutDashboard, label: t.dashboard, module: '' },
     ];
 
-    if (currentUser?.role === 'stock_manager') {
-      return [
-        ...baseItems,
-        { path: '/organization', icon: Landmark, label: 'Organization' },
-        { path: '/products', icon: Package, label: 'Products' },
-        { path: '/company-stock', icon: Package, label: 'Company Stock' },
-        { path: '/branches', icon: Building2, label: 'Branches' },
-        { path: '/branch-stock', icon: Truck, label: 'Branch Stock' },
-        { path: '/users', icon: Users, label: 'Employee' },
-        { path: '/attendance-management', icon: Clock, label: 'Attendance Mgmt' },
-        { path: '/orders', icon: ClipboardList, label: 'Orders' },
-        { path: '/expenditures', icon: Receipt, label: 'Expenditures' },
-        { path: '/customer-ledger', icon: Wallet, label: 'Customer Ledger' },
-        { path: '/accounts', icon: Calculator, label: 'Accounts' },
-        { path: '/all-sales', icon: ShoppingCart, label: 'All Sales' },
-        // New Features
-        { path: '/gst-reports', icon: FileText, label: 'GST Reports' },
-        { path: '/sales-returns', icon: RotateCcw, label: 'Sales Returns' },
-        { path: '/stock-alerts', icon: AlertTriangle, label: 'Stock Alerts' },
-        { path: '/payroll', icon: DollarSign, label: 'Payroll' },
-        { path: '/notifications', icon: Bell, label: 'Notifications' },
-        { path: '/expiry-tracking', icon: CalendarClock, label: 'Expiry Tracking' },
-        { path: '/purchases', icon: ShoppingBag, label: 'Purchases' },
-        { path: '/leave-management', icon: CalendarDays, label: 'Leave Mgmt' },
-        { path: '/damage-tracking', icon: Trash2, label: 'Damage Tracking' },
-        { path: '/audit-log', icon: ScrollText, label: 'Audit Log' },
-        { path: '/route-tracking', icon: Navigation, label: 'Route Tracking' },
-        { path: '/reports', icon: BarChart3, label: 'Reports' },
-        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
-        { path: '/meeting', icon: Video, label: 'Meeting' },
-        { path: '/chat', icon: MessageSquare, label: 'Chat' },
-        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
-        { path: '/language-settings', icon: Globe, label: 'Language' },
-      ];
-    }
+    const permittedItems = ALL_MENU_ITEMS.filter((item) =>
+      item.anyModule
+        ? item.anyModule.some((m) => currentUser?.permissions?.[m]?.view)
+        : currentUser?.permissions?.[item.module]?.view
+    );
 
-    if (currentUser?.role === 'account_manager') {
-      return [
-        ...baseItems,
-        { path: '/my-attendance', icon: Clock, label: 'Attendance' },
-        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
-        { path: '/expenditures', icon: Receipt, label: 'Expenditures' },
-        { path: '/accounts', icon: Calculator, label: 'Accounts' },
-        { path: '/customer-ledger', icon: Wallet, label: 'Customer Ledger' },
-        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
-        { path: '/attendance-management', icon: Clock, label: 'Attendance Mgmt' },
-        { path: '/damage-tracking', icon: Trash2, label: 'Damage Tracking' },
-        { path: '/leave-management', icon: CalendarDays, label: 'Leave Mgmt' },
-        { path: '/meeting', icon: Video, label: 'Meeting' },
-        { path: '/chat', icon: MessageSquare, label: 'Chat' },
-        { path: '/payroll', icon: DollarSign, label: 'Payroll' },
-        { path: '/gst-reports', icon: FileText, label: 'GST Reports' },
-        { path: '/all-sales', icon: ShoppingCart, label: 'All Sales' },
-        { path: '/reports', icon: BarChart3, label: 'Reports' },
-      ];
-    }
-
-    if (currentUser?.role === 'branch_manager') {
-      return [
-        ...baseItems,
-        { path: '/branch-inventory', icon: Package, label: 'Branch Inventory' },
-        { path: '/all-branch-stock', icon: Truck, label: 'All Branch Stock' },
-        { path: '/stock-requests', icon: ClipboardList, label: 'Stock Requests' },
-        { path: '/my-attendance', icon: Clock, label: 'Attendance' },
-        { path: '/branch-expenditures', icon: Receipt, label: 'Expenditures' },
-        { path: '/branch-leaves', icon: CalendarDays, label: 'Leave Mgmt' },
-        { path: '/branch-damages', icon: Trash2, label: 'Damage Tracking' },
-        { path: '/branch-stock-alerts', icon: AlertTriangle, label: 'Stock Alerts' },
-        { path: '/notifications', icon: Bell, label: 'Notifications' },
-        { path: '/meeting', icon: Video, label: 'Meeting' },
-        { path: '/chat', icon: MessageSquare, label: 'Chat' },
-        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
-        { path: '/reports', icon: BarChart3, label: t.reports },
-      ];
-    }
-
-    if (currentUser?.role === 'salesman') {
-      return [
-        ...baseItems,
-        { path: '/my-attendance', icon: Clock, label: t.attendance },
-        { path: '/my-route', icon: Navigation, label: t.myRoute },
-        { path: '/my-stock', icon: Package, label: t.myStock },
-        { path: '/take-product', icon: Truck, label: t.takeProduct },
-        { path: '/create-bill', icon: FileText, label: t.createBill },
-        { path: '/my-orders', icon: ClipboardList, label: t.myOrders },
-        { path: '/my-sales', icon: ShoppingCart, label: t.mySales },
-        { path: '/payment-received', icon: CircleDollarSign, label: 'Payment Received' },
-        { path: '/meeting', icon: Video, label: 'Meeting' },
-        { path: '/chat', icon: MessageSquare, label: 'Chat' },
-        { path: '/dealer-application', icon: Handshake, label: 'Dealer Application' },
-        { path: '/my-expenditures', icon: Receipt, label: t.expenditures },
-        { path: '/my-leaves', icon: CalendarDays, label: t.myLeaves },
-        { path: '/language-settings', icon: Globe, label: t.languageSettings },
-      ];
-    }
-
-    return baseItems;
+    return [...baseItems, ...ALWAYS_VISIBLE_ITEMS, ...permittedItems, SETTINGS_ITEM];
   };
 
   const menuItems = getMenuItems();
@@ -211,10 +148,7 @@ export function Layout({ children }: LayoutProps) {
           <div className="user-info">
             <span className="user-name">{currentUser?.name}</span>
             <span className="user-role">
-              {currentUser?.role === 'stock_manager' && 'Stock Manager'}
-              {currentUser?.role === 'account_manager' && 'Account Manager'}
-              {currentUser?.role === 'branch_manager' && 'Branch Manager'}
-              {currentUser?.role === 'salesman' && 'Salesman'}
+              {currentUser?.roleName || 'No role assigned'}
             </span>
             {branchName && <span className="user-branch">{branchName}</span>}
           </div>

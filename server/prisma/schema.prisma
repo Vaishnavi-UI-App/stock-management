@@ -69,7 +69,7 @@ model User {
   name             String
   email            String   @unique
   password         String
-  role             UserRole
+  role             UserRole? // deprecated: superseded by roleId/roleRef, kept nullable during migration
   phone            String
   // Password reset / first-time setup
   resetToken         String?   @unique
@@ -77,6 +77,9 @@ model User {
   mustChangePassword Boolean   @default(false)
   branchId         String?
   branch           Branch?  @relation(fields: [branchId], references: [id])
+  // Dynamic role/permissions (replaces the fixed `role` enum below during migration)
+  roleId           String?
+  roleRef          Role?    @relation(fields: [roleId], references: [id])
   // Additional employee fields
   profilePhoto     String?  @db.Text
   employeeCode     String?  @unique
@@ -146,6 +149,27 @@ enum UserRole {
   account_manager
   branch_manager
   salesman
+}
+
+enum DataScope {
+  all
+  own_branch
+  own_records
+}
+
+// Admin-defined role: a name + a permission matrix (module -> action -> allowed)
+// plus a data scope controlling which rows a user with this role can see.
+model Role {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  dataScope   DataScope @default(own_records)
+  permissions Json
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users User[]
 }
 
 // Branch model
@@ -658,6 +682,7 @@ model Supplier {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   purchases     Purchase[]
+  payments      SupplierPayment[]
 }
 
 model Purchase {
@@ -678,6 +703,7 @@ model Purchase {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   items           PurchaseItem[]
+  payments        SupplierPayment[]
 }
 
 model PurchaseItem {
@@ -693,6 +719,25 @@ model PurchaseItem {
   batchNo     String?
   expDate     String?
   mfgDate     String?
+}
+
+// Payment Out — money paid to a supplier, the mirror of the customer-facing
+// Payment model. Optionally tied to one Purchase (paying down its balance);
+// left null for a general/advance payment to the supplier not tied to a
+// specific purchase.
+model SupplierPayment {
+  id            String        @id @default(cuid())
+  supplierId    String
+  supplier      Supplier      @relation(fields: [supplierId], references: [id])
+  purchaseId    String?
+  purchase      Purchase?     @relation(fields: [purchaseId], references: [id])
+  amount        Float
+  paymentMethod PaymentMethod @default(cash)
+  referenceNo   String?
+  notes         String?       @db.Text
+  paidBy        String?
+  paymentDate   DateTime      @default(now())
+  createdAt     DateTime      @default(now())
 }
 
 // Feature 12: Leave Management

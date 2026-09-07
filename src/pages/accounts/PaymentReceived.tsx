@@ -61,14 +61,14 @@ export function PaymentReceived() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const salesFilters = currentUser?.role === 'salesman' ? { salesmanId: currentUser.id } : undefined;
+      const salesFilters = currentUser?.dataScope === 'own_records' ? { salesmanId: currentUser.id } : undefined;
       const [salesData, customerData, paymentData] = await Promise.all([
         salesApi.getAll(salesFilters),
         customersApi.getAll(),
         paymentsApi.getAll()
       ]);
 
-      if (currentUser?.role === 'salesman') {
+      if (currentUser?.dataScope === 'own_records') {
         const customerIds = new Set(salesData.map((s: Sale) => s.customerId).filter(Boolean));
         setCustomers(customerData.filter((c: Customer) => customerIds.has(c.id)));
         setPayments(paymentData.filter((p: Payment) => customerIds.has(p.customerId)));
@@ -523,7 +523,7 @@ export function PaymentReceived() {
                           ) : <span style={{ color: '#10b981', fontSize: 11 }}>OK</span>}
                         </td>
                         <td>
-                          {currentUser?.role === 'stock_manager' ? (
+                          {currentUser?.dataScope === 'all' ? (
                             <button className="btn btn-sm btn-secondary" onClick={() => openEdit(payment)}>
                               <Edit2 size={12} />
                             </button>

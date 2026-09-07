@@ -14,7 +14,7 @@ export function Salesmen() {
   const branch = getBranchById(branchId);
 
   // Get salesmen for this branch
-  const branchSalesmen = users.filter(u => u.role === 'salesman' && u.branchId === branchId);
+  const branchSalesmen = users.filter(u => u.dataScope === 'own_records' && u.branchId === branchId);
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',

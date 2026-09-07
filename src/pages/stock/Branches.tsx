@@ -15,7 +15,9 @@ export function Branches() {
     managerId: ''
   });
 
-  const branchManagers = users.filter(u => u.role === 'branch_manager');
+  // "Branch manager" is no longer a fixed role string — any role scoped to
+  // manage a single branch (dataScope 'own_branch') is eligible.
+  const branchManagers = users.filter(u => u.dataScope === 'own_branch');
 
   const handleOpenModal = (branchId?: string) => {
     if (branchId) {
@@ -87,7 +89,7 @@ export function Branches() {
       <div className="grid grid-cols-3">
         {branches.map((branch) => {
           const manager = getUserById(branch.managerId || '');
-          const salesmen = users.filter(u => u.role === 'salesman' && u.branchId === branch.id);
+          const salesmen = users.filter(u => u.dataScope === 'own_records' && u.branchId === branch.id);
 
           return (
             <div className="entity-card" key={branch.id} style={{ flexDirection: 'column', alignItems: 'stretch' }}>

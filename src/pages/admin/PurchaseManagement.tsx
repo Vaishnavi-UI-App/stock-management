@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, ShoppingCart, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ShoppingCart, Users, Wallet } from 'lucide-react';
 import { suppliersApi, purchasesApi } from '../../services/api';
 import { useStore } from '../../store/useStore';
+import { PaymentOut } from '../accounts/PaymentOut';
 import '../stock/Stock.css';
 
 interface Supplier {
   id: string;
   name: string;
-  contact: string;
+  contactPerson: string;
   phone: string;
   gstin: string;
 }
@@ -21,12 +22,16 @@ interface PurchaseItem {
 
 interface Purchase {
   id: string;
+  purchaseNumber: string;
   supplierId: string;
-  supplierName: string;
+  supplier: Supplier;
   items: PurchaseItem[];
   totalAmount: number;
   gstAmount: number;
   grandTotal: number;
+  finalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
   paymentStatus: string;
   notes: string;
   createdAt: string;
@@ -34,7 +39,7 @@ interface Purchase {
 
 export function PurchaseManagement() {
   const { products, fetchProducts } = useStore();
-  const [tab, setTab] = useState<'suppliers' | 'purchases'>('suppliers');
+  const [tab, setTab] = useState<'suppliers' | 'purchases' | 'paymentOut'>('suppliers');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,7 +47,7 @@ export function PurchaseManagement() {
   // Supplier form
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
-  const [supplierForm, setSupplierForm] = useState({ name: '', contact: '', phone: '', gstin: '' });
+  const [supplierForm, setSupplierForm] = useState({ name: '', contactPerson: '', phone: '', gstin: '' });
 
   // Purchase form
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
@@ -74,7 +79,7 @@ export function PurchaseManagement() {
       }
       setShowSupplierModal(false);
       setEditingSupplier(null);
-      setSupplierForm({ name: '', contact: '', phone: '', gstin: '' });
+      setSupplierForm({ name: '', contactPerson: '', phone: '', gstin: '' });
       loadSuppliers();
     } catch (e: any) {
       alert(e.message);
@@ -88,7 +93,7 @@ export function PurchaseManagement() {
 
   const openEditSupplier = (s: Supplier) => {
     setEditingSupplier(s);
-    setSupplierForm({ name: s.name, contact: s.contact, phone: s.phone, gstin: s.gstin });
+    setSupplierForm({ name: s.name, contactPerson: s.contactPerson, phone: s.phone, gstin: s.gstin });
     setShowSupplierModal(true);
   };
 
@@ -119,8 +124,10 @@ export function PurchaseManagement() {
           productName: products.find(p => p.id === i.productId)?.name || '',
         })),
         totalAmount: subtotal,
-        gstAmount,
-        grandTotal,
+        discount: 0,
+        finalAmount: grandTotal,
+        cgstRate: 9,
+        sgstRate: 9,
         notes: purchaseForm.notes,
       });
       setShowPurchaseModal(false);
@@ -138,7 +145,7 @@ export function PurchaseManagement() {
   });
 
   const getStatusStyle = (status: string): React.CSSProperties => {
-    const colors: Record<string, string> = { paid: '#16a34a', partial: '#f97316', pending: '#dc2626' };
+    const colors: Record<string, string> = { paid: '#16a34a', partial: '#f97316', unpaid: '#dc2626' };
     const c = colors[status] || '#6b7280';
     return { display: 'inline-block', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: `${c}15`, color: c };
   };
@@ -150,18 +157,30 @@ export function PurchaseManagement() {
           <h1>Purchase Management</h1>
           <p>Manage suppliers and purchases</p>
         </div>
-        <button
-          onClick={() => tab === 'suppliers' ? (setEditingSupplier(null), setSupplierForm({ name: '', contact: '', phone: '', gstin: '' }), setShowSupplierModal(true)) : (setPurchaseItems([]), setShowPurchaseModal(true))}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#00a651', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
-        >
-          <Plus size={18} /> {tab === 'suppliers' ? 'Add Supplier' : 'New Purchase'}
-        </button>
+        {tab !== 'paymentOut' && (
+          <button
+            onClick={() => {
+              if (tab === 'suppliers') {
+                setEditingSupplier(null);
+                setSupplierForm({ name: '', contactPerson: '', phone: '', gstin: '' });
+                setShowSupplierModal(true);
+              } else {
+                setPurchaseItems([]);
+                setShowPurchaseModal(true);
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#00a651', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+          >
+            <Plus size={18} /> {tab === 'suppliers' ? 'Add Supplier' : 'New Purchase'}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 0 }}>
         <button onClick={() => setTab('suppliers')} style={tabStyle(tab === 'suppliers')}><Users size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Suppliers</button>
         <button onClick={() => setTab('purchases')} style={tabStyle(tab === 'purchases')}><ShoppingCart size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Purchases</button>
+        <button onClick={() => setTab('paymentOut')} style={tabStyle(tab === 'paymentOut')}><Wallet size={16} style={{ marginRight: 6, verticalAlign: 'middle' }} />Payment Out</button>
       </div>
 
       {/* Suppliers Tab */}
@@ -181,7 +200,7 @@ export function PurchaseManagement() {
               ) : suppliers.map(s => (
                 <tr key={s.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                   <td style={{ padding: '12px 16px', fontWeight: 500 }}>{s.name}</td>
-                  <td style={{ padding: '12px 16px' }}>{s.contact}</td>
+                  <td style={{ padding: '12px 16px' }}>{s.contactPerson}</td>
                   <td style={{ padding: '12px 16px' }}>{s.phone}</td>
                   <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 13 }}>{s.gstin}</td>
                   <td style={{ padding: '12px 16px' }}>
@@ -206,21 +225,22 @@ export function PurchaseManagement() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #f3f4f6' }}>
-                  {['Supplier', 'Items', 'Amount', 'GST', 'Grand Total', 'Payment', 'Date'].map(h => (
+                  {['Purchase #', 'Supplier', 'Items', 'Total', 'Paid', 'Balance', 'Status', 'Date'].map(h => (
                     <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: '#6b7280', fontSize: 12, textTransform: 'uppercase' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {purchases.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>No purchases found</td></tr>
+                  <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>No purchases found</td></tr>
                 ) : purchases.map(p => (
                   <tr key={p.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '12px 16px', fontWeight: 500 }}>{p.supplierName}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 500 }}>{p.purchaseNumber}</td>
+                    <td style={{ padding: '12px 16px' }}>{p.supplier?.name}</td>
                     <td style={{ padding: '12px 16px' }}>{p.items?.length || 0} items</td>
-                    <td style={{ padding: '12px 16px' }}>{'\u20B9'}{(p.totalAmount || 0).toLocaleString()}</td>
-                    <td style={{ padding: '12px 16px' }}>{'\u20B9'}{(p.gstAmount || 0).toLocaleString()}</td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#00a651' }}>{'\u20B9'}{(p.grandTotal || 0).toLocaleString()}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#00a651' }}>{'\u20B9'}{(p.finalAmount || 0).toLocaleString()}</td>
+                    <td style={{ padding: '12px 16px' }}>{'\u20B9'}{(p.amountPaid || 0).toLocaleString()}</td>
+                    <td style={{ padding: '12px 16px' }}>{'\u20B9'}{(p.balanceDue || 0).toLocaleString()}</td>
                     <td style={{ padding: '12px 16px' }}><span style={getStatusStyle(p.paymentStatus)}>{p.paymentStatus}</span></td>
                     <td style={{ padding: '12px 16px' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
                   </tr>
@@ -231,6 +251,9 @@ export function PurchaseManagement() {
         </div>
       )}
 
+      {/* Payment Out Tab */}
+      {tab === 'paymentOut' && <PaymentOut />}
+
       {/* Supplier Modal */}
       {showSupplierModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -240,9 +263,9 @@ export function PurchaseManagement() {
               <button onClick={() => setShowSupplierModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {(['name', 'contact', 'phone', 'gstin'] as const).map(f => (
+              {(['name', 'contactPerson', 'phone', 'gstin'] as const).map(f => (
                 <div key={f}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6, textTransform: 'capitalize' }}>{f === 'gstin' ? 'GSTIN' : f}</label>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>{f === 'gstin' ? 'GSTIN' : f === 'contactPerson' ? 'Contact Person' : f.charAt(0).toUpperCase() + f.slice(1)}</label>
                   <input value={supplierForm[f]} onChange={e => setSupplierForm({ ...supplierForm, [f]: e.target.value })} className="form-input" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
                 </div>
               ))}
@@ -309,6 +332,7 @@ export function PurchaseManagement() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

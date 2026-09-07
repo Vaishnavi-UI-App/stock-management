@@ -23,21 +23,39 @@ function generateToken() {
 }
 
 // Strip sensitive fields (password hash, reset token) before returning a user.
+// Also flattens the dynamic role's permissions/dataScope onto the response so
+// the frontend can read `user.permissions`/`user.dataScope` directly without
+// knowing about the `roleRef` relation shape.
 function sanitizeUser(user) {
   if (!user) return user;
-  const { password, resetToken, resetTokenExpiry, ...safe } = user;
-  return safe;
+  const { password, resetToken, resetTokenExpiry, roleRef, ...safe } = user;
+  return {
+    ...safe,
+    roleId: user.roleId ?? null,
+    roleName: roleRef?.name ?? null,
+    permissions: roleRef?.permissions ?? {},
+    dataScope: roleRef?.dataScope ?? 'own_records',
+  };
 }
 
-// Generate a readable temporary password (no ambiguous chars) for the
-// forgot-password flow.
-function generateTempPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  const bytes = crypto.randomBytes(10);
-  for (let i = 0; i < 10; i++) out += chars[bytes[i] % chars.length];
-  return out;
-}
+// Canonical list of permission-gated modules. Keep in sync with the frontend's
+// module map (src/constants/modules.ts) — these exact keys are what a Role's
+// `permissions` JSON is keyed by, and what requirePermission()/the /api/roles
+// validation check against.
+// 'branches', 'branchStock', 'chat', 'meeting', 'stockRequests' intentionally
+// removed — company operates without a branch tier now (direct company ->
+// customer flow). Their routes/pages/code stay in place, just no longer
+// grantable via any role, so they're fully unreachable in the running app.
+const MODULE_KEYS = [
+  'organization', 'products', 'companyStock',
+  'users', 'roles', 'attendanceManagement', 'orders', 'expenditures',
+  'customerLedger', 'accounts', 'sales', 'gstReports', 'salesReturns',
+  'stockAlerts', 'payroll', 'notifications', 'expiryTracking', 'purchases',
+  'leaveManagement', 'damageTracking', 'auditLog', 'routeTracking',
+  'salesmanStock',
+  'dealerApplication', 'paymentReceived', 'reports',
+];
+const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'];
 
 // Middleware
 app.use(cors());
@@ -79,7 +97,12 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: 'No token provided' });
     }
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    // Fresh lookup every request (no caching) — include roleRef so resolved
+    // permissions/dataScope are available on req.user with no extra query.
+    req.user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: { roleRef: true },
+    });
     if (!req.user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -89,6 +112,61 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+// Route-level permission gate. Replaces inline `if (req.user.role !== 'x') ...`
+// checks. A user with no role assigned (roleRef null — the state every
+// non-stock_manager account is left in immediately after the RBAC migration)
+// is denied everything, by construction (no permissions object to read).
+function requirePermission(module, action) {
+  return (req, res, next) => {
+    if (!req.user.roleRef?.permissions?.[module]?.[action]) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    next();
+  };
+}
+
+// For the small number of "owner OR permitted role" checks that depend on a
+// specific record fetched mid-handler and can't be expressed as a route-level
+// gate (e.g. a user editing their own expenditure vs. an approver editing
+// anyone's). `ownerUserId` is the userId on the record being accessed.
+function canAccessOwnOrPermitted(user, ownerUserId, module, action) {
+  if (user.id === ownerUserId) return true;
+  return !!user.roleRef?.permissions?.[module]?.[action];
+}
+
+// Scopes a Prisma `where` clause to what the user's role is allowed to see.
+// - dataScope 'all': no filtering.
+// - dataScope 'own_branch': filter by branchField directly if the model has
+//   one, otherwise (ownerField + resolveBranchViaMembership) resolve the
+//   user's managed branch and filter owned records to that branch's users.
+// - dataScope 'own_records' (default, incl. users with no role at all):
+//   filter to only the user's own records via ownerField.
+async function applyDataScope(where, user, { branchField, ownerField, resolveBranchViaMembership } = {}) {
+  const scope = user.roleRef?.dataScope ?? 'own_records';
+  if (scope === 'all') return where;
+  // own_records: prefer the most precise restriction available (the user's
+  // own records). Only fall back to a branch-level filter if no ownerField
+  // was given for this model — never leave `where` unfiltered when a
+  // restrictive scope is in effect just because the ideal option is missing.
+  if (scope === 'own_records' && ownerField) {
+    where[ownerField] = user.id;
+    return where;
+  }
+  // own_branch (or own_records falling back): restrict to the user's branch.
+  if (branchField) {
+    where[branchField] = user.branchId;
+    return where;
+  }
+  if (ownerField && resolveBranchViaMembership) {
+    const managedBranchId = await getManagedBranchId(user.id);
+    const ids = managedBranchId ? await getBranchUserIds(managedBranchId) : [];
+    where[ownerField] = { in: ids };
+    return where;
+  }
+  if (ownerField) where[ownerField] = user.id;
+  return where;
+}
+
 // ==================== AUTH ROUTES ====================
 
 // Login
@@ -97,7 +175,7 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { branch: true }
+      include: { branch: true, roleRef: true }
     });
 
     if (!user) {
@@ -125,13 +203,15 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   res.json(sanitizeUser(req.user));
 });
 
-// Forgot password — generates a new temporary password, emails it, and forces a
-// change on next login. Always returns a generic success so the endpoint can't
-// be used to discover which emails have accounts.
+// Forgot password — emails a one-time reset link (valid 1 hour) rather than a
+// temporary password, so the user sets their own password directly on the
+// set-password page instead of having to log in with a system-generated one
+// first. Always returns a generic success so the endpoint can't be used to
+// discover which emails have accounts.
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const email = (req.body.email || '').trim();
-    const genericMessage = 'If an account with that email exists, a temporary password has been sent to it.';
+    const genericMessage = 'If an account with that email exists, a password reset link has been sent to it.';
 
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
@@ -139,22 +219,24 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (user) {
-      const tempPassword = generateTempPassword();
-      const hashed = await bcrypt.hash(tempPassword, 10);
+      const resetToken = generateToken();
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
       await prisma.user.update({
         where: { id: user.id },
-        data: { password: hashed, mustChangePassword: true, resetToken: null, resetTokenExpiry: null },
+        data: { resetToken, resetTokenExpiry },
       });
+
+      const resetUrl = `${APP_URL}/set-password/${resetToken}`;
 
       await sendMail({
         to: user.email,
-        subject: 'Your DynamicIndia ERP temporary password',
+        subject: 'Reset your DynamicIndia ERP password',
         text:
           `Hello ${user.name},\n\n` +
           `A password reset was requested for your DynamicIndia ERP account.\n\n` +
-          `Your temporary password is: ${tempPassword}\n\n` +
-          `Please log in at ${APP_URL}/login and change your password immediately from your profile.\n\n` +
-          `If you did not request this, please contact your administrator.`,
+          `Reset your password using the link below (valid for 1 hour):\n` +
+          `${resetUrl}\n\n` +
+          `If you did not request this, you can safely ignore this email — your password will not change.`,
       });
 
       createAuditLog(user.id, 'PASSWORD_RESET', 'User', user.id, null, { email: user.email }, req.ip);
@@ -250,10 +332,10 @@ app.post('/api/auth/set-password', async (req, res) => {
 // ==================== USER ROUTES ====================
 
 // Get all users
-app.get('/api/users', authMiddleware, async (req, res) => {
+app.get('/api/users', authMiddleware, requirePermission('users', 'view'), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      include: { branch: true },
+      include: { branch: true, roleRef: true },
       orderBy: { createdAt: 'desc' }
     });
     res.json(users.map(sanitizeUser));
@@ -263,7 +345,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
 });
 
 // Create user
-app.post('/api/users', authMiddleware, async (req, res) => {
+app.post('/api/users', authMiddleware, requirePermission('users', 'create'), async (req, res) => {
   try {
     const { password, ...userData } = req.body;
     // Password is optional: if the admin leaves it blank, we create the account
@@ -273,7 +355,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
 
     // Only allow known User model fields
     const allowedFields = [
-      'name', 'email', 'phone', 'role', 'branchId',
+      'name', 'email', 'phone', 'roleId', 'branchId',
       'profilePhoto', 'employeeCode', 'aadharCard', 'aadharCardDoc',
       'panCard', 'panCardDoc', 'bloodGroup', 'emergencyContact',
       'monthlySalary', 'bankName', 'bankAccountNo', 'bankAccountHolder',
@@ -285,8 +367,6 @@ app.post('/api/users', authMiddleware, async (req, res) => {
       'ltaAllowance', 'specialAllowance', 'pfDeduction'
     ];
 
-    const validRoles = ['stock_manager', 'account_manager', 'branch_manager', 'salesman'];
-
     const cleanData = {};
     for (const [key, value] of Object.entries(userData)) {
       if (!allowedFields.includes(key)) continue;
@@ -296,9 +376,12 @@ app.post('/api/users', authMiddleware, async (req, res) => {
       cleanData[key] = value;
     }
 
-    // Validate role
-    if (!cleanData.role || !validRoles.includes(cleanData.role)) {
-      return res.status(400).json({ error: `Invalid role: ${cleanData.role || 'none'}` });
+    // Validate roleId, if provided, references a real role
+    if (cleanData.roleId) {
+      const role = await prisma.role.findUnique({ where: { id: cleanData.roleId } });
+      if (!role) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
     }
 
     // Convert dateOfJoining string to Date if present
@@ -329,7 +412,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
         resetTokenExpiry: setupTokenExpiry,
         mustChangePassword: true,
       },
-      include: { branch: true }
+      include: { branch: true, roleRef: true }
     });
     const setupUrl = `${APP_URL}/set-password/${setupToken}`;
 
@@ -347,7 +430,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
     });
 
     // Audit log
-    createAuditLog(req.user.id, 'CREATE', 'User', user.id, null, { name: user.name, email: user.email, role: user.role }, req.ip);
+    createAuditLog(req.user.id, 'CREATE', 'User', user.id, null, { name: user.name, email: user.email, roleId: user.roleId }, req.ip);
 
     // Return the setup link so the admin UI can also share it directly (useful
     // when email delivery is not configured).
@@ -361,14 +444,14 @@ app.post('/api/users', authMiddleware, async (req, res) => {
 });
 
 // Update user
-app.put('/api/users/:id', authMiddleware, async (req, res) => {
+app.put('/api/users/:id', authMiddleware, requirePermission('users', 'edit'), async (req, res) => {
   try {
     const { id } = req.params;
     const { password, ...userData } = req.body;
 
     // Only allow known User model fields
     const allowedFields = [
-      'name', 'email', 'phone', 'role', 'branchId',
+      'name', 'email', 'phone', 'roleId', 'branchId',
       'profilePhoto', 'employeeCode', 'aadharCard', 'aadharCardDoc',
       'panCard', 'panCardDoc', 'bloodGroup', 'emergencyContact',
       'monthlySalary', 'bankName', 'bankAccountNo', 'bankAccountHolder',
@@ -380,14 +463,12 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
       'ltaAllowance', 'specialAllowance', 'pfDeduction'
     ];
 
-    const validRoles = ['stock_manager', 'account_manager', 'branch_manager', 'salesman'];
-
     const cleanData = {};
     for (const [key, value] of Object.entries(userData)) {
       if (!allowedFields.includes(key)) continue;
       if (value === '' || value === undefined || value === null) {
         // For required fields skip empty, for optional set null to clear
-        if (!['name', 'email', 'phone', 'role'].includes(key)) {
+        if (!['name', 'email', 'phone'].includes(key)) {
           cleanData[key] = null;
         }
         continue;
@@ -395,9 +476,12 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
       cleanData[key] = value;
     }
 
-    // Validate role
-    if (cleanData.role && !validRoles.includes(cleanData.role)) {
-      return res.status(400).json({ error: `Invalid role: ${cleanData.role}` });
+    // Validate roleId, if provided, references a real role
+    if (cleanData.roleId) {
+      const role = await prisma.role.findUnique({ where: { id: cleanData.roleId } });
+      if (!role) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
     }
 
     // Convert dateOfJoining string to Date if present
@@ -422,11 +506,11 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
     const user = await prisma.user.update({
       where: { id },
       data: cleanData,
-      include: { branch: true }
+      include: { branch: true, roleRef: true }
     });
 
     // Audit log
-    createAuditLog(req.user.id, 'UPDATE', 'User', id, null, { name: user.name, role: user.role }, req.ip);
+    createAuditLog(req.user.id, 'UPDATE', 'User', id, null, { name: user.name, roleId: user.roleId }, req.ip);
 
     res.json(sanitizeUser(user));
   } catch (error) {
@@ -438,7 +522,7 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
 });
 
 // Delete user
-app.delete('/api/users/:id', authMiddleware, async (req, res) => {
+app.delete('/api/users/:id', authMiddleware, requirePermission('users', 'delete'), async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.user.delete({ where: { id } });
@@ -452,10 +536,160 @@ app.delete('/api/users/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== ROLE ROUTES ====================
+
+// List roles, each with its assigned user count
+app.get('/api/roles', authMiddleware, requirePermission('roles', 'view'), async (req, res) => {
+  try {
+    const roles = await prisma.role.findMany({
+      include: { _count: { select: { users: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(roles.map(r => ({ ...r, userCount: r._count.users, _count: undefined })));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Users with no role assigned — the post-migration/new-employee punch list
+app.get('/api/roles/unassigned-users', authMiddleware, requirePermission('roles', 'view'), async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { roleId: null },
+      include: { branch: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(users.map(sanitizeUser));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Validate/clean an incoming permissions object against the canonical module
+// list so a typo'd module key can't silently create a permission nobody checks.
+function cleanPermissions(input) {
+  const out = {};
+  for (const module of MODULE_KEYS) {
+    const actions = input?.[module] || {};
+    out[module] = {};
+    for (const action of PERMISSION_ACTIONS) {
+      out[module][action] = !!actions[action];
+    }
+  }
+  return out;
+}
+
+app.post('/api/roles', authMiddleware, requirePermission('roles', 'create'), async (req, res) => {
+  try {
+    const { name, description, dataScope, permissions } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Role name is required' });
+    }
+    if (!['all', 'own_branch', 'own_records'].includes(dataScope)) {
+      return res.status(400).json({ error: 'Invalid dataScope' });
+    }
+    const role = await prisma.role.create({
+      data: {
+        name: name.trim(),
+        description: description || null,
+        dataScope,
+        permissions: cleanPermissions(permissions),
+      },
+    });
+    createAuditLog(req.user.id, 'CREATE', 'Role', role.id, null, { name: role.name }, req.ip);
+    res.status(201).json(role);
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'A role with this name already exists' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/roles/:id', authMiddleware, requirePermission('roles', 'edit'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.role.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Role not found' });
+
+    const { name, description, dataScope, permissions } = req.body;
+    if (!['all', 'own_branch', 'own_records'].includes(dataScope)) {
+      return res.status(400).json({ error: 'Invalid dataScope' });
+    }
+    const cleaned = cleanPermissions(permissions);
+
+    // Self-lockout guard: if this is the role the acting admin currently
+    // holds, refuse a save that would strip their own ability to manage roles.
+    if (req.user.roleId === id && !(cleaned.roles.view && cleaned.roles.edit)) {
+      return res.status(400).json({ error: 'You cannot remove your own role-management access from the role you are currently assigned.' });
+    }
+    if (existing.isSystem && (name !== undefined && name.trim() !== existing.name)) {
+      return res.status(400).json({ error: 'The Administrator role cannot be renamed' });
+    }
+
+    const role = await prisma.role.update({
+      where: { id },
+      data: {
+        name: existing.isSystem ? existing.name : (name?.trim() || existing.name),
+        description: description ?? existing.description,
+        dataScope,
+        permissions: cleaned,
+      },
+    });
+    createAuditLog(req.user.id, 'UPDATE', 'Role', role.id, existing, role, req.ip);
+    res.json(role);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/roles/:id', authMiddleware, requirePermission('roles', 'delete'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.role.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Role not found' });
+    if (existing.isSystem) {
+      return res.status(400).json({ error: 'The Administrator role cannot be deleted' });
+    }
+    const usersWithRole = await prisma.user.count({ where: { roleId: id } });
+    if (usersWithRole > 0) {
+      return res.status(400).json({ error: `Cannot delete: ${usersWithRole} user(s) still have this role. Reassign them first.` });
+    }
+    await prisma.role.delete({ where: { id } });
+    createAuditLog(req.user.id, 'DELETE', 'Role', id, existing, null, req.ip);
+    res.json({ message: 'Role deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk-assign a role to multiple users at once — the fast path for the admin
+// working through the "users with no role" list right after migration.
+app.post('/api/roles/:id/assign', authMiddleware, requirePermission('roles', 'edit'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: 'userIds must be a non-empty array' });
+    }
+    const role = await prisma.role.findUnique({ where: { id } });
+    if (!role) return res.status(404).json({ error: 'Role not found' });
+
+    const result = await prisma.user.updateMany({
+      where: { id: { in: userIds } },
+      data: { roleId: id },
+    });
+    createAuditLog(req.user.id, 'UPDATE', 'User', null, null, { bulkRoleAssign: id, count: result.count }, req.ip);
+    res.json({ assigned: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== BRANCH ROUTES ====================
 
 // Get all branches
-app.get('/api/branches', authMiddleware, async (req, res) => {
+app.get('/api/branches', authMiddleware, requirePermission('branches', 'view'), async (req, res) => {
   try {
     const branches = await prisma.branch.findMany({
       include: { manager: { select: { id: true, name: true, email: true } } },
@@ -468,7 +702,7 @@ app.get('/api/branches', authMiddleware, async (req, res) => {
 });
 
 // Create branch
-app.post('/api/branches', authMiddleware, async (req, res) => {
+app.post('/api/branches', authMiddleware, requirePermission('branches', 'create'), async (req, res) => {
   try {
     const branch = await prisma.branch.create({
       data: req.body,
@@ -484,7 +718,7 @@ app.post('/api/branches', authMiddleware, async (req, res) => {
 });
 
 // Update branch
-app.put('/api/branches/:id', authMiddleware, async (req, res) => {
+app.put('/api/branches/:id', authMiddleware, requirePermission('branches', 'edit'), async (req, res) => {
   try {
     const { id } = req.params;
     const branch = await prisma.branch.update({
@@ -502,7 +736,7 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
 });
 
 // Delete branch
-app.delete('/api/branches/:id', authMiddleware, async (req, res) => {
+app.delete('/api/branches/:id', authMiddleware, requirePermission('branches', 'delete'), async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.branch.delete({ where: { id } });
@@ -518,7 +752,7 @@ app.delete('/api/branches/:id', authMiddleware, async (req, res) => {
 // ==================== PRODUCT ROUTES ====================
 
 // Get all products
-app.get('/api/products', authMiddleware, async (req, res) => {
+app.get('/api/products', authMiddleware, requirePermission('products', 'view'), async (req, res) => {
   try {
     const products = await prisma.product.findMany({
       orderBy: { createdAt: 'desc' },
@@ -540,7 +774,7 @@ app.get('/api/products', authMiddleware, async (req, res) => {
 });
 
 // Create product
-app.post('/api/products', authMiddleware, async (req, res) => {
+app.post('/api/products', authMiddleware, requirePermission('products', 'create'), async (req, res) => {
   try {
     const { name, sku, category, price, mrp, unit, caseQty, gstRate, description, expDate, reorderPoint, batchNo, mfgDate } = req.body;
     const productData = { name, sku, category, price, unit, caseQty: caseQty || 1, gstRate: gstRate || 5 };
@@ -589,7 +823,7 @@ app.post('/api/products', authMiddleware, async (req, res) => {
 });
 
 // Update product
-app.put('/api/products/:id', authMiddleware, async (req, res) => {
+app.put('/api/products/:id', authMiddleware, requirePermission('products', 'edit'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, sku, category, price, mrp, unit, caseQty, gstRate, description, expDate, reorderPoint, batchNo, mfgDate } = req.body;
@@ -654,7 +888,7 @@ app.put('/api/products/:id', authMiddleware, async (req, res) => {
 });
 
 // Delete product
-app.delete('/api/products/:id', authMiddleware, async (req, res) => {
+app.delete('/api/products/:id', authMiddleware, requirePermission('products', 'delete'), async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.product.delete({ where: { id } });
@@ -670,7 +904,7 @@ app.delete('/api/products/:id', authMiddleware, async (req, res) => {
 // ==================== COMPANY STOCK ROUTES ====================
 
 // Get company stock
-app.get('/api/company-stock', authMiddleware, async (req, res) => {
+app.get('/api/company-stock', authMiddleware, requirePermission('companyStock', 'view'), async (req, res) => {
   try {
     // Backfill: ensure every product has a CompanyStock row so newly added
     // products (including legacy ones created before auto-creation) appear here.
@@ -695,7 +929,7 @@ app.get('/api/company-stock', authMiddleware, async (req, res) => {
 });
 
 // Update company stock
-app.put('/api/company-stock/:productId', authMiddleware, async (req, res) => {
+app.put('/api/company-stock/:productId', authMiddleware, requirePermission('companyStock', 'edit'), async (req, res) => {
   try {
     const { productId } = req.params;
     const { quantity } = req.body;
@@ -731,14 +965,8 @@ app.get('/api/branch-stock', authMiddleware, async (req, res) => {
 });
 
 // Update branch stock
-app.put('/api/branch-stock', authMiddleware, async (req, res) => {
+app.put('/api/branch-stock', authMiddleware, requirePermission('branchStock', 'edit'), async (req, res) => {
   try {
-    if (req.user.role === 'branch_manager') {
-      return res.status(403).json({ error: 'Branch managers must submit stock update requests for approval' });
-    }
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
     const { branchId, productId, quantity } = req.body;
 
     const stock = await prisma.branchStock.upsert({
@@ -756,7 +984,7 @@ app.put('/api/branch-stock', authMiddleware, async (req, res) => {
 // ==================== SALESMAN STOCK ROUTES ====================
 
 // Get salesman stock
-app.get('/api/salesman-stock', authMiddleware, async (req, res) => {
+app.get('/api/salesman-stock', authMiddleware, requirePermission('salesmanStock', 'view'), async (req, res) => {
   try {
     const { salesmanId } = req.query;
     const where = salesmanId ? { salesmanId } : {};
@@ -772,7 +1000,7 @@ app.get('/api/salesman-stock', authMiddleware, async (req, res) => {
 });
 
 // Take stock (salesman takes from branch)
-app.post('/api/salesman-stock/take', authMiddleware, async (req, res) => {
+app.post('/api/salesman-stock/take', authMiddleware, requirePermission('salesmanStock', 'create'), async (req, res) => {
   try {
     const { salesmanId, branchId, productId, quantity } = req.body;
 
@@ -811,7 +1039,7 @@ app.post('/api/salesman-stock/take', authMiddleware, async (req, res) => {
 });
 
 // Return stock (salesman returns to branch)
-app.post('/api/salesman-stock/return', authMiddleware, async (req, res) => {
+app.post('/api/salesman-stock/return', authMiddleware, requirePermission('salesmanStock', 'create'), async (req, res) => {
   try {
     const { salesmanId, branchId, productId, quantity } = req.body;
 
@@ -1210,13 +1438,8 @@ app.get('/api/sales/:id', authMiddleware, async (req, res) => {
 });
 
 // Get pending sales for approval (Admin only)
-app.get('/api/sales/pending/all', authMiddleware, async (req, res) => {
+app.get('/api/sales/pending/all', authMiddleware, requirePermission('sales', 'view'), async (req, res) => {
   try {
-    // Check if user is stock_manager or account_manager (admin)
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
-      return res.status(403).json({ error: 'Only admin can view pending bills' });
-    }
-
     const sales = await prisma.sale.findMany({
       where: { status: 'pending' },
       include: {
@@ -1233,13 +1456,8 @@ app.get('/api/sales/pending/all', authMiddleware, async (req, res) => {
 });
 
 // Approve sale (Admin only)
-app.put('/api/sales/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/sales/:id/approve', authMiddleware, requirePermission('sales', 'edit'), async (req, res) => {
   try {
-    // Check if user is stock_manager or account_manager (admin)
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
-      return res.status(403).json({ error: 'Only admin can approve bills' });
-    }
-
     const { id } = req.params;
 
     const sale = await prisma.sale.update({
@@ -1265,13 +1483,8 @@ app.put('/api/sales/:id/approve', authMiddleware, async (req, res) => {
 });
 
 // Reject sale (Admin only)
-app.put('/api/sales/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/sales/:id/reject', authMiddleware, requirePermission('sales', 'edit'), async (req, res) => {
   try {
-    // Check if user is stock_manager or account_manager (admin)
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
-      return res.status(403).json({ error: 'Only admin can reject bills' });
-    }
-
     const { id } = req.params;
     const { rejectionReason } = req.body;
 
@@ -1314,8 +1527,8 @@ app.put('/api/sales/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Sale not found' });
     }
 
-    // Only allow editing pending sales
-    if (existingSale.status !== 'pending' && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+    // Only allow editing pending sales (unless the user has sales edit permission)
+    if (existingSale.status !== 'pending' && !req.user.roleRef?.permissions?.sales?.edit) {
       return res.status(403).json({ error: 'Cannot edit approved/rejected sales' });
     }
 
@@ -1384,9 +1597,7 @@ app.delete('/api/sales/:id', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Bill already deleted' });
     }
 
-    const isAdmin = ['stock_manager', 'account_manager'].includes(req.user.role);
-    const isOwner = req.user.id === existingSale.salesmanId;
-    if (!isAdmin && !isOwner) {
+    if (!canAccessOwnOrPermitted(req.user, existingSale.salesmanId, 'sales', 'delete')) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -1602,9 +1813,14 @@ app.get('/api/customers/advance/all', authMiddleware, async (req, res) => {
 
 // ==================== PAYMENT ROUTES ====================
 
-// Get all payments
+// Get all payments — shared by both the Payment Received and Customer Ledger
+// pages, so either permission grants access.
 app.get('/api/payments', authMiddleware, async (req, res) => {
   try {
+    const perms = req.user.roleRef?.permissions;
+    if (!perms?.paymentReceived?.view && !perms?.customerLedger?.view) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { customerId, startDate, endDate } = req.query;
     const where = {};
     if (customerId) where.customerId = customerId;
@@ -1629,9 +1845,14 @@ app.get('/api/payments', authMiddleware, async (req, res) => {
   }
 });
 
-// Record payment
+// Record payment — shared by both the Payment Received and Customer Ledger
+// pages, so either permission grants access.
 app.post('/api/payments', authMiddleware, async (req, res) => {
   try {
+    const perms = req.user.roleRef?.permissions;
+    if (!perms?.paymentReceived?.create && !perms?.customerLedger?.create) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { customerId, saleId, amount, paymentMethod, referenceNo, notes, isAdvance } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
@@ -1729,12 +1950,8 @@ app.post('/api/payments', authMiddleware, async (req, res) => {
 });
 
 // Update payment (Admin only)
-app.put('/api/payments/:id', authMiddleware, async (req, res) => {
+app.put('/api/payments/:id', authMiddleware, requirePermission('customerLedger', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can update payments' });
-    }
-
     const { id } = req.params;
     const { amount, paymentMethod, referenceNo, notes, paymentDate } = req.body;
 
@@ -1902,7 +2119,13 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { salesmanId, branchId, orderStatus } = req.query;
     const where = {};
-    if (salesmanId) where.salesmanId = salesmanId;
+    // Self-service endpoint: someone without orders.view permission can only
+    // ever see their own orders, regardless of what salesmanId they pass.
+    if (!req.user.roleRef?.permissions?.orders?.view) {
+      where.salesmanId = req.user.id;
+    } else if (salesmanId) {
+      where.salesmanId = salesmanId;
+    }
     if (branchId) where.branchId = branchId;
     if (orderStatus) where.orderStatus = orderStatus;
 
@@ -1938,6 +2161,10 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    if (!canAccessOwnOrPermitted(req.user, order.salesmanId, 'orders', 'view')) {
+      return res.status(403).json({ error: 'Cannot view another employee\'s order' });
+    }
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1945,16 +2172,10 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
 });
 
 // Get pending orders for approval (Admin + Branch Manager)
-app.get('/api/orders/pending/all', authMiddleware, async (req, res) => {
+app.get('/api/orders/pending/all', authMiddleware, requirePermission('orders', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const where = { orderStatus: 'pending' };
-    if (req.user.role === 'branch_manager') {
-      const managedBranchId = await getManagedBranchId(req.user.id);
-      if (managedBranchId) where.branchId = managedBranchId;
-    }
+    let where = { orderStatus: 'pending' };
+    where = await applyDataScope(where, req.user, { branchField: 'branchId' });
     const orders = await prisma.order.findMany({
       where,
       include: {
@@ -1974,6 +2195,17 @@ app.get('/api/orders/pending/all', authMiddleware, async (req, res) => {
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { items, amountPaid = 0, ...orderData } = req.body;
+
+    // branchId is a required FK. Users without their own branch (e.g. an admin
+    // placing an order) may not even have permission to list branches, so resolve
+    // a fallback here server-side rather than relying on the frontend to supply one.
+    if (!orderData.branchId) {
+      const fallbackBranch = await prisma.branch.findFirst({ orderBy: { createdAt: 'asc' } });
+      if (!fallbackBranch) {
+        return res.status(400).json({ error: 'No branch exists yet. Please create a branch before placing an order.' });
+      }
+      orderData.branchId = fallbackBranch.id;
+    }
 
     // Generate serial-wise purchase invoice number using time + sequence
     const orderNumber = await generateNextDocNumber(prisma, 'order', 'orderNumber', 'PO');
@@ -2019,6 +2251,24 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       }
     });
 
+    // Notify everyone who can confirm orders (anyone whose role grants
+    // orders.edit) that a new order is waiting — excluding the submitter
+    // themself, even if their own role happens to also carry that permission.
+    const approvers = await prisma.user.findMany({ where: { roleId: { not: null } }, include: { roleRef: true } });
+    const notifyIds = approvers
+      .filter(u => u.id !== req.user.id && u.roleRef?.permissions?.orders?.edit)
+      .map(u => u.id);
+    for (const userId of notifyIds) {
+      await prisma.notification.create({
+        data: {
+          userId, type: 'order_pending',
+          title: 'New Order Awaiting Confirmation',
+          message: `${order.salesman?.name || 'An employee'} submitted order ${order.orderNumber} (₹${order.finalAmount.toLocaleString()}) for confirmation`,
+          entityType: 'Order', entityId: order.id, createdBy: req.user.id
+        }
+      });
+    }
+
     res.status(201).json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2041,9 +2291,15 @@ app.put('/api/orders/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Only allow editing pending orders
-    if (existingOrder.orderStatus !== 'pending' && req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Cannot edit approved/rejected orders' });
+    // Only the order's own salesman, or someone with orders edit permission, may edit it.
+    if (!canAccessOwnOrPermitted(req.user, existingOrder.salesmanId, 'orders', 'edit')) {
+      return res.status(403).json({ error: 'Cannot edit another employee\'s order' });
+    }
+
+    // Once confirmed (no longer pending), only someone with orders edit
+    // permission can still change it — the owning employee cannot.
+    if (existingOrder.orderStatus !== 'pending' && !req.user.roleRef?.permissions?.orders?.edit) {
+      return res.status(403).json({ error: 'Cannot edit an order after it has been confirmed' });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -2092,12 +2348,9 @@ app.put('/api/orders/:id', authMiddleware, async (req, res) => {
 });
 
 // Approve order (Admin + Branch Manager) - Converts to Tax Invoice/Sale
-app.put('/api/orders/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/orders/:id/approve', authMiddleware, requirePermission('orders', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const orderCheck = await prisma.order.findUnique({ where: { id: req.params.id } });
       if (!orderCheck || orderCheck.branchId !== managedBranchId) {
@@ -2275,6 +2528,15 @@ app.put('/api/orders/:id/approve', authMiddleware, async (req, res) => {
 
     createAuditLog(req.user.id, 'APPROVE', 'Order', req.params.id, null, { orderNumber: result.order.orderNumber, convertedSaleId: result.sale.id }, req.ip);
 
+    await prisma.notification.create({
+      data: {
+        userId: result.order.salesmanId, type: 'order_approved',
+        title: 'Order Confirmed',
+        message: `Your order ${result.order.orderNumber} has been confirmed and converted to invoice ${result.sale.billNumber}`,
+        entityType: 'Order', entityId: result.order.id, createdBy: req.user.id
+      }
+    });
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2282,12 +2544,9 @@ app.put('/api/orders/:id/approve', authMiddleware, async (req, res) => {
 });
 
 // Reject order (Admin + Branch Manager)
-app.put('/api/orders/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/orders/:id/reject', authMiddleware, requirePermission('orders', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const orderCheck = await prisma.order.findUnique({ where: { id: req.params.id } });
       if (!orderCheck || orderCheck.branchId !== managedBranchId) {
@@ -2315,6 +2574,15 @@ app.put('/api/orders/:id/reject', authMiddleware, async (req, res) => {
 
     createAuditLog(req.user.id, 'REJECT', 'Order', id, null, { orderNumber: order.orderNumber, reason: rejectionReason }, req.ip);
 
+    await prisma.notification.create({
+      data: {
+        userId: order.salesmanId, type: 'order_rejected',
+        title: 'Order Rejected',
+        message: `Your order ${order.orderNumber} was rejected. ${rejectionReason ? 'Reason: ' + rejectionReason : ''}`,
+        entityType: 'Order', entityId: order.id, createdBy: req.user.id
+      }
+    });
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2334,8 +2602,12 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    if (order.orderStatus !== 'pending' && req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Cannot delete non-pending orders' });
+    if (!canAccessOwnOrPermitted(req.user, order.salesmanId, 'orders', 'delete')) {
+      return res.status(403).json({ error: 'Cannot delete another employee\'s order' });
+    }
+
+    if (order.orderStatus !== 'pending' && !req.user.roleRef?.permissions?.orders?.delete) {
+      return res.status(403).json({ error: 'Cannot delete an order after it has been confirmed' });
     }
 
     await prisma.order.delete({ where: { id } });
@@ -2350,19 +2622,10 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
 // IMPORTANT: Specific routes MUST come before :id routes
 
 // Get pending expenditures (Admin + Branch Manager)
-app.get('/api/expenditures/pending/all', authMiddleware, async (req, res) => {
+app.get('/api/expenditures/pending/all', authMiddleware, requirePermission('expenditures', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const where = { status: 'pending' };
-    if (req.user.role === 'branch_manager') {
-      const managedBranchId = await getManagedBranchId(req.user.id);
-      if (managedBranchId) {
-        const branchUserIds = await getBranchUserIds(managedBranchId);
-        where.userId = { in: branchUserIds };
-      }
-    }
+    let where = { status: 'pending' };
+    where = await applyDataScope(where, req.user, { ownerField: 'userId', resolveBranchViaMembership: true });
     const expenditures = await prisma.expenditure.findMany({
       where,
       include: {
@@ -2377,23 +2640,22 @@ app.get('/api/expenditures/pending/all', authMiddleware, async (req, res) => {
 });
 
 // Get expenditure summary (Admin + Branch Manager)
-app.get('/api/expenditures/summary', authMiddleware, async (req, res) => {
+app.get('/api/expenditures/summary', authMiddleware, requirePermission('expenditures', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
     const { userId, month, year } = req.query;
     const where = {};
+    const summaryScope = req.user.roleRef?.dataScope ?? 'own_records';
 
-    if (req.user.role === 'branch_manager') {
+    if (summaryScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       if (managedBranchId) {
         const branchUserIds = await getBranchUserIds(managedBranchId);
         where.userId = userId ? userId : { in: branchUserIds };
       }
-    } else if (userId) {
-      where.userId = userId;
+    } else if (summaryScope === 'all') {
+      if (userId) where.userId = userId;
+    } else {
+      where.userId = req.user.id;
     }
 
     if (month && year) {
@@ -2448,15 +2710,16 @@ app.get('/api/expenditures/summary', authMiddleware, async (req, res) => {
 });
 
 // Get all expenditures (Admin sees all, Salesman sees own)
-app.get('/api/expenditures', authMiddleware, async (req, res) => {
+app.get('/api/expenditures', authMiddleware, requirePermission('expenditures', 'view'), async (req, res) => {
   try {
     const { userId, status, month, year } = req.query;
     const where = {};
+    const listScope = req.user.roleRef?.dataScope ?? 'own_records';
 
     // Non-admin users can only see their own expenditures
-    if (req.user.role === 'stock_manager' || req.user.role === 'account_manager') {
+    if (listScope === 'all') {
       if (userId) where.userId = userId;
-    } else if (req.user.role === 'branch_manager') {
+    } else if (listScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       if (managedBranchId) {
         const branchUserIds = await getBranchUserIds(managedBranchId);
@@ -2518,7 +2781,7 @@ app.get('/api/expenditures/:id', authMiddleware, async (req, res) => {
     }
 
     // Non-admin can only view their own expenditures
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && expenditure.userId !== req.user.id) {
+    if (!canAccessOwnOrPermitted(req.user, expenditure.userId, 'expenditures', 'view')) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -2565,7 +2828,7 @@ app.put('/api/expenditures/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Expenditure not found' });
     }
 
-    if (existing.userId !== req.user.id) {
+    if (!canAccessOwnOrPermitted(req.user, existing.userId, 'expenditures', 'edit')) {
       return res.status(403).json({ error: 'Cannot edit other user\'s expenditure' });
     }
 
@@ -2604,11 +2867,11 @@ app.delete('/api/expenditures/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Expenditure not found' });
     }
 
-    if (existing.userId !== req.user.id && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+    if (!canAccessOwnOrPermitted(req.user, existing.userId, 'expenditures', 'delete')) {
       return res.status(403).json({ error: 'Cannot delete other user\'s expenditure' });
     }
 
-    if (existing.status !== 'pending' && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+    if (existing.status !== 'pending' && !req.user.roleRef?.permissions?.expenditures?.delete) {
       return res.status(403).json({ error: 'Cannot delete approved/rejected expenditure' });
     }
 
@@ -2620,12 +2883,9 @@ app.delete('/api/expenditures/:id', authMiddleware, async (req, res) => {
 });
 
 // Approve expenditure (Admin + Account Manager + Branch Manager)
-app.put('/api/expenditures/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/expenditures/:id/approve', authMiddleware, requirePermission('expenditures', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const exp = await prisma.expenditure.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
       if (!exp || exp.user.branchId !== managedBranchId) {
@@ -2656,12 +2916,9 @@ app.put('/api/expenditures/:id/approve', authMiddleware, async (req, res) => {
 });
 
 // Reject expenditure (Admin + Account Manager + Branch Manager)
-app.put('/api/expenditures/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/expenditures/:id/reject', authMiddleware, requirePermission('expenditures', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const exp = await prisma.expenditure.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
       if (!exp || exp.user.branchId !== managedBranchId) {
@@ -2696,7 +2953,7 @@ app.put('/api/expenditures/:id/reject', authMiddleware, async (req, res) => {
 // ==================== REPORTS ====================
 
 // Sales report
-app.get('/api/reports/sales', authMiddleware, async (req, res) => {
+app.get('/api/reports/sales', authMiddleware, requirePermission('reports', 'view'), async (req, res) => {
   try {
     const { startDate, endDate, branchId, salesmanId } = req.query;
 
@@ -2747,12 +3004,8 @@ app.get('/api/organization', authMiddleware, async (req, res) => {
 });
 
 // Create or update organization
-app.post('/api/organization', authMiddleware, async (req, res) => {
+app.post('/api/organization', authMiddleware, requirePermission('organization', 'create'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can manage organization' });
-    }
-
     const existing = await prisma.organization.findFirst();
 
     let org;
@@ -2776,12 +3029,8 @@ app.post('/api/organization', authMiddleware, async (req, res) => {
 });
 
 // Upload organization document
-app.post('/api/organization/:orgId/documents', authMiddleware, async (req, res) => {
+app.post('/api/organization/:orgId/documents', authMiddleware, requirePermission('organization', 'create'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can upload documents' });
-    }
-
     const { orgId } = req.params;
     const { documentName, documentType, fileData, fileName, fileType } = req.body;
 
@@ -2804,12 +3053,8 @@ app.post('/api/organization/:orgId/documents', authMiddleware, async (req, res) 
 });
 
 // Delete organization document
-app.delete('/api/organization/documents/:docId', authMiddleware, async (req, res) => {
+app.delete('/api/organization/documents/:docId', authMiddleware, requirePermission('organization', 'delete'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can delete documents' });
-    }
-
     const { docId } = req.params;
     await prisma.organizationDocument.delete({ where: { id: docId } });
     res.json({ message: 'Document deleted' });
@@ -2988,23 +3233,22 @@ app.get('/api/attendance/my-history', authMiddleware, async (req, res) => {
 });
 
 // Get all attendance (Admin + Account Manager + Branch Manager)
-app.get('/api/attendance/all', authMiddleware, async (req, res) => {
+app.get('/api/attendance/all', authMiddleware, requirePermission('attendanceManagement', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
     const { userId, date, month, year, approvalStatus } = req.query;
     const where = {};
+    const allScope = req.user.roleRef?.dataScope ?? 'own_records';
 
-    if (req.user.role === 'branch_manager') {
+    if (allScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       if (managedBranchId) {
         const branchUserIds = await getBranchUserIds(managedBranchId);
         where.userId = userId ? userId : { in: branchUserIds };
       }
-    } else if (userId) {
-      where.userId = userId;
+    } else if (allScope === 'all') {
+      if (userId) where.userId = userId;
+    } else {
+      where.userId = req.user.id;
     }
 
     if (approvalStatus) where.approvalStatus = approvalStatus;
@@ -3035,19 +3279,10 @@ app.get('/api/attendance/all', authMiddleware, async (req, res) => {
 });
 
 // Get pending attendance approvals (Admin + Account Manager + Branch Manager)
-app.get('/api/attendance/pending', authMiddleware, async (req, res) => {
+app.get('/api/attendance/pending', authMiddleware, requirePermission('attendanceManagement', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const where = { approvalStatus: 'pending' };
-    if (req.user.role === 'branch_manager') {
-      const managedBranchId = await getManagedBranchId(req.user.id);
-      if (managedBranchId) {
-        const branchUserIds = await getBranchUserIds(managedBranchId);
-        where.userId = { in: branchUserIds };
-      }
-    }
+    let where = { approvalStatus: 'pending' };
+    where = await applyDataScope(where, req.user, { ownerField: 'userId', resolveBranchViaMembership: true });
     const attendance = await prisma.attendance.findMany({
       where,
       include: {
@@ -3063,12 +3298,9 @@ app.get('/api/attendance/pending', authMiddleware, async (req, res) => {
 });
 
 // Approve attendance (Admin + Account Manager + Branch Manager)
-app.put('/api/attendance/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/attendance/:id/approve', authMiddleware, requirePermission('attendanceManagement', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const att = await prisma.attendance.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
       if (!att || att.user.branchId !== managedBranchId) {
@@ -3098,12 +3330,9 @@ app.put('/api/attendance/:id/approve', authMiddleware, async (req, res) => {
 });
 
 // Reject attendance (Admin + Account Manager + Branch Manager)
-app.put('/api/attendance/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/attendance/:id/reject', authMiddleware, requirePermission('attendanceManagement', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const att = await prisma.attendance.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
       if (!att || att.user.branchId !== managedBranchId) {
@@ -3136,12 +3365,8 @@ app.put('/api/attendance/:id/reject', authMiddleware, async (req, res) => {
 });
 
 // Get attendance summary (Admin + Account Manager + Branch Manager)
-app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
+app.get('/api/attendance/summary', authMiddleware, requirePermission('attendanceManagement', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
     const { month, year } = req.query;
     const m = parseInt(month) || new Date().getMonth() + 1;
     const y = parseInt(year) || new Date().getFullYear();
@@ -3151,12 +3376,15 @@ app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
 
     // Branch manager: scope to their branch users
     let userFilter = {};
-    if (req.user.role === 'branch_manager') {
+    const summaryDataScope = req.user.roleRef?.dataScope ?? 'own_records';
+    if (summaryDataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       if (managedBranchId) {
         const branchUserIds = await getBranchUserIds(managedBranchId);
         userFilter = { userId: { in: branchUserIds } };
       }
+    } else if (summaryDataScope !== 'all') {
+      userFilter = { userId: req.user.id };
     }
 
     const [present, absent, halfDay, late, pending] = await Promise.all([
@@ -3196,7 +3424,7 @@ app.get('/api/attendance/summary', authMiddleware, async (req, res) => {
 
 // ==================== FEATURE 2: SALES RETURNS ====================
 
-app.get('/api/sales-returns', authMiddleware, async (req, res) => {
+app.get('/api/sales-returns', authMiddleware, requirePermission('salesReturns', 'view'), async (req, res) => {
   try {
     const returns = await prisma.salesReturn.findMany({
       include: { sale: true, customer: true, items: { include: { product: true } } },
@@ -3206,7 +3434,7 @@ app.get('/api/sales-returns', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/sales-returns', authMiddleware, async (req, res) => {
+app.post('/api/sales-returns', authMiddleware, requirePermission('salesReturns', 'create'), async (req, res) => {
   try {
     const { saleId, customerId, reason, items } = req.body;
     const totalAmount = items.reduce((s, i) => s + i.total, 0);
@@ -3223,7 +3451,7 @@ app.post('/api/sales-returns', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/sales-returns/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/sales-returns/:id/approve', authMiddleware, requirePermission('salesReturns', 'edit'), async (req, res) => {
   try {
     const ret = await prisma.salesReturn.update({
       where: { id: req.params.id },
@@ -3256,7 +3484,7 @@ app.put('/api/sales-returns/:id/approve', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/sales-returns/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/sales-returns/:id/reject', authMiddleware, requirePermission('salesReturns', 'edit'), async (req, res) => {
   try {
     const ret = await prisma.salesReturn.update({
       where: { id: req.params.id },
@@ -3271,7 +3499,7 @@ app.put('/api/sales-returns/:id/reject', authMiddleware, async (req, res) => {
 
 // ==================== FEATURE 3: LOW STOCK ALERTS ====================
 
-app.get('/api/stock-alerts', authMiddleware, async (req, res) => {
+app.get('/api/stock-alerts', authMiddleware, requirePermission('stockAlerts', 'view'), async (req, res) => {
   try {
     const products = await prisma.product.findMany({
       where: { reorderPoint: { not: null } },
@@ -3288,7 +3516,7 @@ app.get('/api/stock-alerts', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/products/:id/reorder-point', authMiddleware, async (req, res) => {
+app.put('/api/products/:id/reorder-point', authMiddleware, requirePermission('products', 'edit'), async (req, res) => {
   try {
     const product = await prisma.product.update({
       where: { id: req.params.id },
@@ -3300,10 +3528,10 @@ app.put('/api/products/:id/reorder-point', authMiddleware, async (req, res) => {
 
 // ==================== FEATURE 4: PAYROLL PROCESSING ====================
 
-app.post('/api/payroll/generate', authMiddleware, async (req, res) => {
+app.post('/api/payroll/generate', authMiddleware, requirePermission('payroll', 'view'), async (req, res) => {
   try {
     const { month, year } = req.body;
-    const employees = await prisma.user.findMany({ where: { role: { notIn: ['stock_manager', 'account_manager'] } } });
+    const employees = await prisma.user.findMany({ where: { roleRef: { dataScope: { not: 'all' } } } });
     const daysInMonth = new Date(year, month, 0).getDate();
     const payroll = [];
 
@@ -3340,7 +3568,7 @@ app.post('/api/payroll/generate', authMiddleware, async (req, res) => {
 
 // ==================== FEATURE 6: PRODUCT EXPIRY TRACKING ====================
 
-app.get('/api/product-batches', authMiddleware, async (req, res) => {
+app.get('/api/product-batches', authMiddleware, requirePermission('expiryTracking', 'view'), async (req, res) => {
   try {
     const { daysToExpiry } = req.query;
     const where = {};
@@ -3357,7 +3585,7 @@ app.get('/api/product-batches', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/product-batches', authMiddleware, async (req, res) => {
+app.post('/api/product-batches', authMiddleware, requirePermission('expiryTracking', 'create'), async (req, res) => {
   try {
     const batch = await prisma.productBatch.create({ data: req.body });
     res.json(batch);
@@ -3374,7 +3602,7 @@ app.get('/api/performance/salesman', authMiddleware, async (req, res) => {
     const startDate = new Date(y, m - 1, 1);
     const endDate = new Date(y, m, 0);
 
-    const salesmen = await prisma.user.findMany({ where: { role: 'salesman' }, include: { branch: true } });
+    const salesmen = await prisma.user.findMany({ where: { roleRef: { dataScope: 'own_records' } }, include: { branch: true } });
     const performance = [];
 
     for (const sm of salesmen) {
@@ -3429,7 +3657,7 @@ app.delete('/api/suppliers/:id', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.get('/api/purchases', authMiddleware, async (req, res) => {
+app.get('/api/purchases', authMiddleware, requirePermission('purchases', 'view'), async (req, res) => {
   try {
     const purchases = await prisma.purchase.findMany({
       include: { supplier: true, items: { include: { product: true } } },
@@ -3439,7 +3667,7 @@ app.get('/api/purchases', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/purchases', authMiddleware, async (req, res) => {
+app.post('/api/purchases', authMiddleware, requirePermission('purchases', 'create'), async (req, res) => {
   try {
     const { supplierId, items, totalAmount, discount, finalAmount, cgstRate, sgstRate, amountPaid, notes } = req.body;
     const count = await prisma.purchase.count();
@@ -3449,7 +3677,19 @@ app.post('/api/purchases', authMiddleware, async (req, res) => {
         purchaseNumber, supplierId, totalAmount, discount, finalAmount, cgstRate, sgstRate,
         amountPaid: amountPaid || 0, balanceDue: finalAmount - (amountPaid || 0),
         paymentStatus: amountPaid >= finalAmount ? 'paid' : amountPaid > 0 ? 'partial' : 'unpaid',
-        notes, items: { create: items }
+        notes,
+        items: {
+          create: items.map((item) => ({
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.quantity * item.price,
+            batchNo: item.batchNo,
+            expDate: item.expDate,
+            mfgDate: item.mfgDate,
+          })),
+        }
       },
       include: { items: true, supplier: true }
     });
@@ -3468,9 +3708,65 @@ app.post('/api/purchases', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// Payment Out — money paid to a supplier. Mirrors the customer-facing
+// /api/payments: records a SupplierPayment and, when tied to a purchase,
+// updates that purchase's amountPaid/balanceDue/paymentStatus.
+app.get('/api/supplier-payments', authMiddleware, requirePermission('purchases', 'view'), async (req, res) => {
+  try {
+    const { supplierId } = req.query;
+    const payments = await prisma.supplierPayment.findMany({
+      where: supplierId ? { supplierId } : undefined,
+      include: { supplier: true, purchase: true },
+      orderBy: { paymentDate: 'desc' }
+    });
+    res.json(payments);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/supplier-payments', authMiddleware, requirePermission('purchases', 'create'), async (req, res) => {
+  try {
+    const { supplierId, purchaseId, amount, paymentMethod, referenceNo, notes } = req.body;
+
+    if (!supplierId || !amount || amount <= 0) {
+      return res.status(400).json({ error: 'Supplier and a positive amount are required' });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      if (purchaseId) {
+        const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } });
+        if (!purchase) throw new Error('Purchase not found');
+
+        const newAmountPaid = purchase.amountPaid + amount;
+        const newBalanceDue = Math.max(0, purchase.finalAmount - newAmountPaid);
+        await tx.purchase.update({
+          where: { id: purchaseId },
+          data: {
+            amountPaid: newAmountPaid,
+            balanceDue: newBalanceDue,
+            paymentStatus: newBalanceDue <= 0 ? 'paid' : newAmountPaid > 0 ? 'partial' : 'unpaid',
+          },
+        });
+      }
+
+      return tx.supplierPayment.create({
+        data: {
+          supplierId, purchaseId: purchaseId || null, amount,
+          paymentMethod: paymentMethod || 'cash', referenceNo, notes,
+          paidBy: req.user.id,
+        },
+        include: { supplier: true, purchase: true },
+      });
+    });
+
+    createAuditLog(req.user.id, 'CREATE', 'SupplierPayment', result.id, null, { supplierId, purchaseId, amount }, req.ip);
+
+    res.json(result);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 // ==================== FEATURE 10: DAILY COLLECTION REPORT ====================
 
-app.get('/api/reports/daily-collection', authMiddleware, async (req, res) => {
+app.get('/api/reports/daily-collection', authMiddleware, requirePermission('reports', 'view'), async (req, res) => {
   try {
     const { date } = req.query;
     const targetDate = date ? new Date(date) : new Date();
@@ -3509,22 +3805,10 @@ app.get('/api/reports/daily-collection', authMiddleware, async (req, res) => {
 
 // ==================== FEATURE 12: LEAVE MANAGEMENT ====================
 
-app.get('/api/leaves', authMiddleware, async (req, res) => {
+app.get('/api/leaves', authMiddleware, requirePermission('leaveManagement', 'view'), async (req, res) => {
   try {
     let where = {};
-    if (req.user.role === 'stock_manager' || req.user.role === 'account_manager') {
-      where = {};
-    } else if (req.user.role === 'branch_manager') {
-      const managedBranchId = await getManagedBranchId(req.user.id);
-      if (managedBranchId) {
-        const branchUserIds = await getBranchUserIds(managedBranchId);
-        where = { userId: { in: branchUserIds } };
-      } else {
-        where = { userId: req.user.id };
-      }
-    } else {
-      where = { userId: req.user.id };
-    }
+    where = await applyDataScope(where, req.user, { ownerField: 'userId', resolveBranchViaMembership: true });
     if (req.query.status) where.status = req.query.status;
     const leaves = await prisma.leaveRequest.findMany({
       where, include: { user: { select: { id: true, name: true, email: true, employeeCode: true } } },
@@ -3547,12 +3831,9 @@ app.post('/api/leaves', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/leaves/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/leaves/:id/approve', authMiddleware, requirePermission('leaveManagement', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const leaveCheck = await prisma.leaveRequest.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
       if (!leaveCheck || leaveCheck.user.branchId !== managedBranchId) {
@@ -3570,12 +3851,9 @@ app.put('/api/leaves/:id/approve', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/leaves/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/leaves/:id/reject', authMiddleware, requirePermission('leaveManagement', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       const leaveCheck = await prisma.leaveRequest.findUnique({ where: { id: req.params.id }, include: { user: { select: { branchId: true } } } });
       if (!leaveCheck || leaveCheck.user.branchId !== managedBranchId) {
@@ -3595,13 +3873,10 @@ app.put('/api/leaves/:id/reject', authMiddleware, async (req, res) => {
 
 // ==================== FEATURE 13: DAMAGE/WASTAGE TRACKING ====================
 
-app.get('/api/damages', authMiddleware, async (req, res) => {
+app.get('/api/damages', authMiddleware, requirePermission('damageTracking', 'view'), async (req, res) => {
   try {
-    const where = {};
-    if (req.user.role === 'branch_manager') {
-      const managedBranchId = await getManagedBranchId(req.user.id);
-      if (managedBranchId) where.branchId = managedBranchId;
-    }
+    let where = {};
+    where = await applyDataScope(where, req.user, { branchField: 'branchId' });
     const damages = await prisma.damageRecord.findMany({
       where,
       include: { product: true, branch: true, reportedByUser: { select: { id: true, name: true } } },
@@ -3611,7 +3886,7 @@ app.get('/api/damages', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.post('/api/damages', authMiddleware, async (req, res) => {
+app.post('/api/damages', authMiddleware, requirePermission('damageTracking', 'create'), async (req, res) => {
   try {
     const { productId, branchId, quantity, reason } = req.body;
     const damage = await prisma.damageRecord.create({
@@ -3621,13 +3896,10 @@ app.post('/api/damages', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/damages/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/damages/:id/approve', authMiddleware, requirePermission('damageTracking', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
     const damage = await prisma.damageRecord.findUnique({ where: { id: req.params.id } });
-    if (req.user.role === 'branch_manager') {
+    if (req.user.roleRef?.dataScope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       if (!damage || damage.branchId !== managedBranchId) {
         return res.status(403).json({ error: 'Can only approve damages for your branch' });
@@ -3681,7 +3953,7 @@ app.get('/api/customers/credit-check/:customerId', authMiddleware, async (req, r
 
 // ==================== FEATURE 15: AUDIT LOG ====================
 
-app.get('/api/audit-logs', authMiddleware, async (req, res) => {
+app.get('/api/audit-logs', authMiddleware, requirePermission('auditLog', 'view'), async (req, res) => {
   try {
     const { entity, action, userId, limit: lmt } = req.query;
     const where = {};
@@ -3720,15 +3992,14 @@ async function getBranchUserIds(branchId) {
 // ==================== STOCK UPDATE REQUEST ROUTES ====================
 
 // Create stock update request (Branch Manager only)
-app.post('/api/stock-update-requests', authMiddleware, async (req, res) => {
+app.post('/api/stock-update-requests', authMiddleware, requirePermission('stockRequests', 'create'), async (req, res) => {
   try {
-    if (req.user.role !== 'branch_manager') {
-      return res.status(403).json({ error: 'Only branch managers can request stock updates' });
-    }
     const { branchId, productId, requestedQuantity, requestType, reason } = req.body;
-    const managedBranchId = await getManagedBranchId(req.user.id);
-    if (!managedBranchId || managedBranchId !== branchId) {
-      return res.status(403).json({ error: 'You can only request changes for your own branch' });
+    if (req.user.roleRef?.dataScope === 'own_branch') {
+      const managedBranchId = await getManagedBranchId(req.user.id);
+      if (!managedBranchId || managedBranchId !== branchId) {
+        return res.status(403).json({ error: 'You can only request changes for your own branch' });
+      }
     }
     const current = await prisma.branchStock.findUnique({
       where: { branchId_productId: { branchId, productId } }
@@ -3745,7 +4016,7 @@ app.post('/api/stock-update-requests', authMiddleware, async (req, res) => {
       include: { product: true, branch: true }
     });
     // Notify all admins
-    const admins = await prisma.user.findMany({ where: { role: 'stock_manager' } });
+    const admins = await prisma.user.findMany({ where: { roleRef: { dataScope: 'all' } } });
     for (const admin of admins) {
       await prisma.notification.create({
         data: {
@@ -3762,18 +4033,13 @@ app.post('/api/stock-update-requests', authMiddleware, async (req, res) => {
 });
 
 // Get stock update requests
-app.get('/api/stock-update-requests', authMiddleware, async (req, res) => {
+app.get('/api/stock-update-requests', authMiddleware, requirePermission('stockRequests', 'view'), async (req, res) => {
   try {
     const { status, branchId } = req.query;
-    const where = {};
-    if (req.user.role === 'branch_manager') {
-      const managedBranchId = await getManagedBranchId(req.user.id);
-      where.branchId = managedBranchId;
-    } else if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+    let where = {};
+    where = await applyDataScope(where, req.user, { branchField: 'branchId' });
     if (status) where.status = status;
-    if (branchId && req.user.role === 'stock_manager') where.branchId = branchId;
+    if (branchId && req.user.roleRef?.dataScope === 'all') where.branchId = branchId;
     const requests = await prisma.stockUpdateRequest.findMany({
       where,
       include: {
@@ -3787,11 +4053,8 @@ app.get('/api/stock-update-requests', authMiddleware, async (req, res) => {
 });
 
 // Approve stock update request (Admin only)
-app.put('/api/stock-update-requests/:id/approve', authMiddleware, async (req, res) => {
+app.put('/api/stock-update-requests/:id/approve', authMiddleware, requirePermission('stockRequests', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can approve stock changes' });
-    }
     const request = await prisma.stockUpdateRequest.findUnique({
       where: { id: req.params.id },
       include: { product: true, branch: true }
@@ -3824,11 +4087,8 @@ app.put('/api/stock-update-requests/:id/approve', authMiddleware, async (req, re
 });
 
 // Reject stock update request (Admin only)
-app.put('/api/stock-update-requests/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/stock-update-requests/:id/reject', authMiddleware, requirePermission('stockRequests', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can reject stock changes' });
-    }
     const { rejectionReason } = req.body;
     const request = await prisma.stockUpdateRequest.findUnique({
       where: { id: req.params.id },
@@ -3856,7 +4116,7 @@ app.put('/api/stock-update-requests/:id/reject', authMiddleware, async (req, res
 
 // ==================== NOTIFICATION ROUTES ====================
 
-app.get('/api/notifications', authMiddleware, async (req, res) => {
+app.get('/api/notifications', authMiddleware, requirePermission('notifications', 'view'), async (req, res) => {
   try {
     const where = { userId: req.user.id };
     if (req.query.unreadOnly === 'true') where.isRead = false;
@@ -3867,21 +4127,21 @@ app.get('/api/notifications', authMiddleware, async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/notifications/:id/read', authMiddleware, async (req, res) => {
+app.put('/api/notifications/:id/read', authMiddleware, requirePermission('notifications', 'edit'), async (req, res) => {
   try {
     await prisma.notification.update({ where: { id: req.params.id }, data: { isRead: true } });
     res.json({ message: 'Marked as read' });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.put('/api/notifications/read-all', authMiddleware, async (req, res) => {
+app.put('/api/notifications/read-all', authMiddleware, requirePermission('notifications', 'edit'), async (req, res) => {
   try {
     await prisma.notification.updateMany({ where: { userId: req.user.id, isRead: false }, data: { isRead: true } });
     res.json({ message: 'All marked as read' });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-app.get('/api/notifications/unread-count', authMiddleware, async (req, res) => {
+app.get('/api/notifications/unread-count', authMiddleware, requirePermission('notifications', 'view'), async (req, res) => {
   try {
     const count = await prisma.notification.count({ where: { userId: req.user.id, isRead: false } });
     res.json({ count });
@@ -3970,8 +4230,8 @@ app.get('/api/gps/history/:userId', authMiddleware, async (req, res) => {
     const { userId } = req.params;
     const { date } = req.query;
 
-    // Only allow stock_manager or self to view
-    if (req.user.role !== 'stock_manager' && req.user.id !== userId) {
+    // Only allow permitted roles or self to view
+    if (!canAccessOwnOrPermitted(req.user, userId, 'routeTracking', 'view')) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -3992,15 +4252,11 @@ app.get('/api/gps/history/:userId', authMiddleware, async (req, res) => {
 });
 
 // Get all salesmen's current locations (Admin dashboard)
-app.get('/api/gps/live-tracking', authMiddleware, async (req, res) => {
+app.get('/api/gps/live-tracking', authMiddleware, requirePermission('routeTracking', 'view'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager') {
-      return res.status(403).json({ error: 'Only admin can view live tracking' });
-    }
-
     // Get latest location for each active salesman
     const salesmen = await prisma.user.findMany({
-      where: { role: 'salesman' },
+      where: { roleRef: { dataScope: 'own_records' } },
       select: { id: true, name: true, phone: true, employeeCode: true, branch: true }
     });
 
@@ -4216,7 +4472,7 @@ app.get('/api/gps/visits/:userId', authMiddleware, async (req, res) => {
     const { userId } = req.params;
     const { date } = req.query;
 
-    if (req.user.role !== 'stock_manager' && req.user.id !== userId) {
+    if (!canAccessOwnOrPermitted(req.user, userId, 'routeTracking', 'view')) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -4259,7 +4515,7 @@ app.get('/api/gps/summary/:userId', authMiddleware, async (req, res) => {
     const { userId } = req.params;
     const { startDate, endDate } = req.query;
 
-    if (req.user.role !== 'stock_manager' && req.user.id !== userId) {
+    if (!canAccessOwnOrPermitted(req.user, userId, 'routeTracking', 'view')) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -4349,14 +4605,15 @@ app.post('/api/gps/update-distance', authMiddleware, async (req, res) => {
 // ==================== DEALER APPLICATIONS ====================
 
 // Get all dealer applications (role-based access)
-app.get('/api/dealer-applications', authMiddleware, async (req, res) => {
+app.get('/api/dealer-applications', authMiddleware, requirePermission('dealerApplication', 'view'), async (req, res) => {
   try {
     const { status } = req.query;
     const where = {};
+    const scope = req.user.roleRef?.dataScope ?? 'own_records';
 
-    if (req.user.role === 'stock_manager' || req.user.role === 'account_manager') {
+    if (scope === 'all') {
       // Admin sees all
-    } else if (req.user.role === 'branch_manager') {
+    } else if (scope === 'own_branch') {
       const managedBranchId = await getManagedBranchId(req.user.id);
       if (managedBranchId) {
         const branchUserIds = await getBranchUserIds(managedBranchId);
@@ -4386,7 +4643,7 @@ app.get('/api/dealer-applications', authMiddleware, async (req, res) => {
 });
 
 // Get dealer application by ID
-app.get('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
+app.get('/api/dealer-applications/:id', authMiddleware, requirePermission('dealerApplication', 'view'), async (req, res) => {
   try {
     const { id } = req.params;
     const application = await prisma.dealerApplication.findUnique({
@@ -4400,7 +4657,7 @@ app.get('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Dealer application not found' });
     }
 
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager' && application.userId !== req.user.id) {
+    if (req.user.roleRef?.dataScope !== 'all' && application.userId !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -4492,9 +4749,7 @@ app.put('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Dealer application not found' });
     }
 
-    const isPrivileged = req.user.role === 'stock_manager' || req.user.role === 'account_manager' || req.user.role === 'branch_manager';
-
-    if (existing.userId !== req.user.id && !isPrivileged) {
+    if (!canAccessOwnOrPermitted(req.user, existing.userId, 'dealerApplication', 'edit')) {
       return res.status(403).json({ error: 'Cannot edit other user\'s application' });
     }
 
@@ -4583,11 +4838,11 @@ app.delete('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Dealer application not found' });
     }
 
-    if (existing.userId !== req.user.id && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+    if (!canAccessOwnOrPermitted(req.user, existing.userId, 'dealerApplication', 'delete')) {
       return res.status(403).json({ error: 'Cannot delete other user\'s application' });
     }
 
-    if (existing.status !== 'pending' && req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
+    if (existing.status !== 'pending' && !req.user.roleRef?.permissions?.dealerApplication?.delete) {
       return res.status(403).json({ error: 'Cannot delete approved/rejected application' });
     }
 
@@ -4598,13 +4853,9 @@ app.delete('/api/dealer-applications/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Approve dealer application (stock_manager/account_manager only)
-app.put('/api/dealer-applications/:id/approve', authMiddleware, async (req, res) => {
+// Approve dealer application
+app.put('/api/dealer-applications/:id/approve', authMiddleware, requirePermission('dealerApplication', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
     const { id } = req.params;
 
     const application = await prisma.dealerApplication.update({
@@ -4649,13 +4900,9 @@ app.put('/api/dealer-applications/:id/approve', authMiddleware, async (req, res)
   }
 });
 
-// Reject dealer application (stock_manager/account_manager only)
-app.put('/api/dealer-applications/:id/reject', authMiddleware, async (req, res) => {
+// Reject dealer application
+app.put('/api/dealer-applications/:id/reject', authMiddleware, requirePermission('dealerApplication', 'edit'), async (req, res) => {
   try {
-    if (req.user.role !== 'stock_manager' && req.user.role !== 'account_manager') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
     const { id } = req.params;
     const { rejectionReason } = req.body;
 
@@ -4695,10 +4942,18 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 // ==================== CHAT ROUTES ====================
 // Immutable messaging: send + read only. No edit, no delete.
 
-const CHAT_ADMIN_ROLES = ['stock_manager', 'account_manager', 'branch_manager'];
+// Chat is not part of the gated module system (open to any authenticated user),
+// but broadcast channels still need an "admin-ish" distinction. Dynamic roles
+// have no fixed name list to check anymore, so use dataScope as the proxy:
+// anything broader than 'own_records' (i.e. not a plain individual-contributor
+// role) is treated as broadcast-privileged, mirroring the old
+// stock_manager/account_manager/branch_manager set.
+function canBroadcastChat(user) {
+  return (user.roleRef?.dataScope ?? 'own_records') !== 'own_records';
+}
 
 // List users available to start a chat with (everyone else, active users)
-app.get('/api/chat/users', authMiddleware, async (req, res) => {
+app.get('/api/chat/users', authMiddleware, requirePermission('chat', 'view'), async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       where: { id: { not: req.user.id } },
@@ -4712,7 +4967,7 @@ app.get('/api/chat/users', authMiddleware, async (req, res) => {
 });
 
 // List my conversations (direct + group I'm in + all broadcasts)
-app.get('/api/chat/conversations', authMiddleware, async (req, res) => {
+app.get('/api/chat/conversations', authMiddleware, requirePermission('chat', 'view'), async (req, res) => {
   try {
     const conversations = await prisma.conversation.findMany({
       where: {
@@ -4757,7 +5012,7 @@ app.get('/api/chat/conversations', authMiddleware, async (req, res) => {
 });
 
 // Create a conversation (direct / group / broadcast)
-app.post('/api/chat/conversations', authMiddleware, async (req, res) => {
+app.post('/api/chat/conversations', authMiddleware, requirePermission('chat', 'create'), async (req, res) => {
   try {
     const { type, name, participantIds } = req.body;
 
@@ -4765,7 +5020,7 @@ app.post('/api/chat/conversations', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid conversation type' });
     }
 
-    if (type === 'broadcast' && !CHAT_ADMIN_ROLES.includes(req.user.role)) {
+    if (type === 'broadcast' && !canBroadcastChat(req.user)) {
       return res.status(403).json({ error: 'Only managers/admins can create broadcast channels' });
     }
 
@@ -4836,14 +5091,14 @@ app.post('/api/chat/conversations', authMiddleware, async (req, res) => {
 });
 
 // Helper: check if the current user may access a conversation
-async function userCanAccessConversation(userId, userRole, conversation) {
+async function userCanAccessConversation(userId, conversation) {
   if (!conversation) return false;
   if (conversation.type === 'broadcast') return true;
   return conversation.participants.some(p => p.userId === userId);
 }
 
 // List messages in a conversation (paginated; oldest-first within page)
-app.get('/api/chat/conversations/:id/messages', authMiddleware, async (req, res) => {
+app.get('/api/chat/conversations/:id/messages', authMiddleware, requirePermission('chat', 'view'), async (req, res) => {
   try {
     const { id } = req.params;
     const { before, limit } = req.query;
@@ -4855,7 +5110,7 @@ app.get('/api/chat/conversations/:id/messages', authMiddleware, async (req, res)
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
-    const allowed = await userCanAccessConversation(req.user.id, req.user.role, conversation);
+    const allowed = await userCanAccessConversation(req.user.id, conversation);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const where = { conversationId: id };
@@ -4875,7 +5130,7 @@ app.get('/api/chat/conversations/:id/messages', authMiddleware, async (req, res)
 });
 
 // Send a message
-app.post('/api/chat/conversations/:id/messages', authMiddleware, async (req, res) => {
+app.post('/api/chat/conversations/:id/messages', authMiddleware, requirePermission('chat', 'create'), async (req, res) => {
   try {
     const { id } = req.params;
     const { content } = req.body;
@@ -4891,7 +5146,7 @@ app.post('/api/chat/conversations/:id/messages', authMiddleware, async (req, res
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
     // Broadcast: only admins/managers may post
-    if (conversation.type === 'broadcast' && !CHAT_ADMIN_ROLES.includes(req.user.role)) {
+    if (conversation.type === 'broadcast' && !canBroadcastChat(req.user)) {
       return res.status(403).json({ error: 'Only managers/admins can post to broadcast channels' });
     }
     if (conversation.type !== 'broadcast') {
@@ -4917,7 +5172,7 @@ app.post('/api/chat/conversations/:id/messages', authMiddleware, async (req, res
 });
 
 // Mark my participant record as read up to now
-app.post('/api/chat/conversations/:id/read', authMiddleware, async (req, res) => {
+app.post('/api/chat/conversations/:id/read', authMiddleware, requirePermission('chat', 'view'), async (req, res) => {
   try {
     const { id } = req.params;
 

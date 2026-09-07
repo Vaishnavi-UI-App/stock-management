@@ -17,9 +17,9 @@ export function Reports() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedBranch, setSelectedBranch] = useState<string>('');
 
-  const isStockManager = currentUser?.role === 'stock_manager';
-  const isBranchManager = currentUser?.role === 'branch_manager';
-  const isSalesman = currentUser?.role === 'salesman';
+  const isStockManager = currentUser?.dataScope === 'all';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
+  const isSalesman = currentUser?.dataScope === 'own_records';
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',

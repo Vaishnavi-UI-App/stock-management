@@ -9,7 +9,7 @@ import '../stock/Stock.css';
 
 export function DamageTracking() {
   const { products, branches, currentUser } = useStore();
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   const [damages, setDamages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);

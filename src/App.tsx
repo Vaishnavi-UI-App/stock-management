@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import { Layout } from './components/layout/Layout';
 import { Login } from './pages/auth/Login';
+import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { SetPassword } from './pages/auth/SetPassword';
 
 // Lazily load each page so a user only downloads the code for the pages their
 // role can reach. Helper maps named exports to the default export lazy() wants.
@@ -12,8 +14,7 @@ const page = <T extends Record<string, React.ComponentType<any>>>(
 ) => lazy(() => loader().then((m) => ({ default: m[name] })));
 
 const Dashboard = page(() => import('./pages/dashboard/Dashboard'), 'Dashboard');
-const Products = page(() => import('./pages/stock/Products'), 'Products');
-const CompanyStock = page(() => import('./pages/stock/CompanyStock'), 'CompanyStock');
+const ProductsHub = page(() => import('./pages/stock/ProductsHub'), 'ProductsHub');
 const BranchStock = page(() => import('./pages/stock/BranchStock'), 'BranchStock');
 const Branches = page(() => import('./pages/stock/Branches'), 'Branches');
 const Users = page(() => import('./pages/stock/Users'), 'Users');
@@ -21,30 +22,23 @@ const TakeProduct = page(() => import('./pages/sales/TakeProduct'), 'TakeProduct
 const CreateBill = page(() => import('./pages/sales/CreateBill'), 'CreateBill');
 const MySales = page(() => import('./pages/sales/MySales'), 'MySales');
 const MyStock = page(() => import('./pages/sales/MyStock'), 'MyStock');
-const MyOrders = page(() => import('./pages/sales/MyOrders'), 'MyOrders');
+const OrdersHub = page(() => import('./pages/sales/OrdersHub'), 'OrdersHub');
 const MyExpenditures = page(() => import('./pages/sales/MyExpenditures'), 'MyExpenditures');
 const AllSales = page(() => import('./pages/sales/AllSales'), 'AllSales');
 const BranchInventory = page(() => import('./pages/sales/BranchInventory'), 'BranchInventory');
 const Salesmen = page(() => import('./pages/sales/Salesmen'), 'Salesmen');
-const Reports = page(() => import('./pages/reports/Reports'), 'Reports');
-const Accounts = page(() => import('./pages/accounts/Accounts'), 'Accounts');
+const AccountsHub = page(() => import('./pages/accounts/AccountsHub'), 'AccountsHub');
 const CustomerLedger = page(() => import('./pages/accounts/CustomerLedger'), 'CustomerLedger');
 const Expenditures = page(() => import('./pages/admin/Expenditures'), 'Expenditures');
-const OrganizationMaster = page(() => import('./pages/admin/OrganizationMaster'), 'OrganizationMaster');
 const AttendanceManagement = page(() => import('./pages/admin/AttendanceManagement'), 'AttendanceManagement');
-const MyAttendance = page(() => import('./pages/attendance/MyAttendance'), 'MyAttendance');
-const Profile = page(() => import('./pages/profile/Profile'), 'Profile');
+const AttendanceHub = page(() => import('./pages/admin/AttendanceHub'), 'AttendanceHub');
 const Orders = page(() => import('./pages/orders/Orders'), 'Orders');
 const Chat = page(() => import('./pages/chat/Chat'), 'Chat');
 // New Feature Pages
-const GSTReports = page(() => import('./pages/admin/GSTReports'), 'GSTReports');
-const SalesReturns = page(() => import('./pages/admin/SalesReturns'), 'SalesReturns');
 const StockAlerts = page(() => import('./pages/admin/StockAlerts'), 'StockAlerts');
 const PayrollProcessing = page(() => import('./pages/admin/PayrollProcessing'), 'PayrollProcessing');
 const Notifications = page(() => import('./pages/admin/Notifications'), 'Notifications');
-const ExpiryTracking = page(() => import('./pages/admin/ExpiryTracking'), 'ExpiryTracking');
 const PurchaseManagement = page(() => import('./pages/admin/PurchaseManagement'), 'PurchaseManagement');
-const LanguageSettings = page(() => import('./pages/admin/LanguageSettings'), 'LanguageSettings');
 const LeaveManagement = page(() => import('./pages/admin/LeaveManagement'), 'LeaveManagement');
 const MyLeaves = page(() => import('./pages/sales/MyLeaves'), 'MyLeaves');
 const DamageTracking = page(() => import('./pages/admin/DamageTracking'), 'DamageTracking');
@@ -52,20 +46,29 @@ const AuditLog = page(() => import('./pages/admin/AuditLog'), 'AuditLog');
 const RouteTracking = page(() => import('./pages/admin/RouteTracking'), 'RouteTracking');
 const MyRoute = page(() => import('./pages/sales/MyRoute'), 'MyRoute');
 const DealerApplication = page(() => import('./pages/admin/DealerApplication'), 'DealerApplication');
-const PaymentReceived = page(() => import('./pages/accounts/PaymentReceived'), 'PaymentReceived');
 const Meeting = page(() => import('./pages/admin/Meeting'), 'Meeting');
 const StockUpdateRequests = page(() => import('./pages/admin/StockUpdateRequests'), 'StockUpdateRequests');
 const AllBranchStockView = page(() => import('./pages/sales/AllBranchStockView'), 'AllBranchStockView');
+const Settings = page(() => import('./pages/admin/Settings'), 'Settings');
 
 // Protected Route Component
-function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
+function ProtectedRoute({
+  children,
+  requiredPermission,
+}: {
+  children: React.ReactNode;
+  requiredPermission?: { module: string; action: 'view' | 'create' | 'edit' | 'delete' };
+}) {
   const { isAuthenticated, currentUser } = useStore();
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && currentUser && !allowedRoles.includes(currentUser.role)) {
+  if (
+    requiredPermission &&
+    !currentUser?.permissions?.[requiredPermission.module]?.[requiredPermission.action]
+  ) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -91,6 +94,11 @@ function App() {
           path="/login"
           element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
         />
+        <Route
+          path="/forgot-password"
+          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <ForgotPassword />}
+        />
+        <Route path="/set-password/:token" element={<SetPassword />} />
 
         {/* Protected Routes - All Users */}
         <Route
@@ -101,36 +109,22 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/profile" element={<Navigate to="/settings" replace />} />
 
         {/* Stock Manager Routes */}
         <Route
           path="/products"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
-              <Products />
+            <ProtectedRoute>
+              <ProductsHub />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/company-stock"
-          element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
-              <CompanyStock />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/company-stock" element={<Navigate to="/products" replace />} />
         <Route
           path="/branch-stock"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'branchStock', action: 'view' }}>
               <BranchStock />
             </ProtectedRoute>
           }
@@ -138,7 +132,7 @@ function App() {
         <Route
           path="/branches"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'branches', action: 'view' }}>
               <Branches />
             </ProtectedRoute>
           }
@@ -146,15 +140,16 @@ function App() {
         <Route
           path="/users"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'users', action: 'view' }}>
               <Users />
             </ProtectedRoute>
           }
         />
+        <Route path="/roles" element={<Navigate to="/settings" replace />} />
         <Route
           path="/all-sales"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'sales', action: 'view' }}>
               <AllSales />
             </ProtectedRoute>
           }
@@ -162,86 +157,73 @@ function App() {
         <Route
           path="/accounts"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}>
-              <Accounts />
+            <ProtectedRoute>
+              <AccountsHub />
             </ProtectedRoute>
           }
         />
         <Route
           path="/customer-ledger"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'customerLedger', action: 'view' }}>
               <CustomerLedger />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/orders"
-          element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}>
-              <Orders />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/orders" element={<Navigate to="/my-orders" replace />} />
         <Route
           path="/expenditures"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'expenditures', action: 'view' }}>
               <Expenditures />
             </ProtectedRoute>
           }
         />
+        <Route path="/organization" element={<Navigate to="/settings" replace />} />
         <Route
-          path="/organization"
+          path="/settings"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager']}>
-              <OrganizationMaster />
+            <ProtectedRoute>
+              <Settings />
             </ProtectedRoute>
           }
         />
         <Route
           path="/attendance-management"
           element={
-            <ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}>
-              <AttendanceManagement />
+            <ProtectedRoute>
+              <AttendanceHub />
             </ProtectedRoute>
           }
         />
 
         {/* New Feature Routes - Stock Manager */}
-        <Route path="/gst-reports" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}><GSTReports /></ProtectedRoute>} />
-        <Route path="/sales-returns" element={<ProtectedRoute allowedRoles={['stock_manager']}><SalesReturns /></ProtectedRoute>} />
-        <Route path="/stock-alerts" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><StockAlerts /></ProtectedRoute>} />
-        <Route path="/payroll" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager']}><PayrollProcessing /></ProtectedRoute>} />
-        <Route path="/notifications" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><Notifications /></ProtectedRoute>} />
-        <Route path="/expiry-tracking" element={<ProtectedRoute allowedRoles={['stock_manager']}><ExpiryTracking /></ProtectedRoute>} />
-        <Route path="/purchases" element={<ProtectedRoute allowedRoles={['stock_manager']}><PurchaseManagement /></ProtectedRoute>} />
-        <Route path="/language-settings" element={<ProtectedRoute><LanguageSettings /></ProtectedRoute>} />
-        <Route path="/leave-management" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}><LeaveManagement /></ProtectedRoute>} />
-        <Route path="/damage-tracking" element={<ProtectedRoute allowedRoles={['stock_manager', 'account_manager', 'branch_manager']}><DamageTracking /></ProtectedRoute>} />
-        <Route path="/audit-log" element={<ProtectedRoute allowedRoles={['stock_manager']}><AuditLog /></ProtectedRoute>} />
-        <Route path="/route-tracking" element={<ProtectedRoute allowedRoles={['stock_manager']}><RouteTracking /></ProtectedRoute>} />
-        <Route path="/stock-requests" element={<ProtectedRoute allowedRoles={['stock_manager', 'branch_manager']}><StockUpdateRequests /></ProtectedRoute>} />
-        <Route path="/dealer-application" element={<ProtectedRoute><DealerApplication /></ProtectedRoute>} />
-        <Route path="/payment-received" element={<ProtectedRoute><PaymentReceived /></ProtectedRoute>} />
-        <Route path="/meeting" element={<ProtectedRoute><Meeting /></ProtectedRoute>} />
-        <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+        <Route path="/gst-reports" element={<Navigate to="/accounts" replace />} />
+        <Route path="/sales-returns" element={<Navigate to="/accounts" replace />} />
+        <Route path="/stock-alerts" element={<Navigate to="/products" replace />} />
+        <Route path="/payroll" element={<ProtectedRoute requiredPermission={{ module: 'payroll', action: 'view' }}><PayrollProcessing /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute requiredPermission={{ module: 'notifications', action: 'view' }}><Notifications /></ProtectedRoute>} />
+        <Route path="/expiry-tracking" element={<Navigate to="/products" replace />} />
+        <Route path="/purchases" element={<ProtectedRoute requiredPermission={{ module: 'purchases', action: 'view' }}><PurchaseManagement /></ProtectedRoute>} />
+        <Route path="/language-settings" element={<Navigate to="/settings" replace />} />
+        <Route path="/leave-management" element={<Navigate to="/attendance-management" replace />} />
+        <Route path="/damage-tracking" element={<Navigate to="/products" replace />} />
+        <Route path="/audit-log" element={<ProtectedRoute requiredPermission={{ module: 'auditLog', action: 'view' }}><AuditLog /></ProtectedRoute>} />
+        <Route path="/route-tracking" element={<ProtectedRoute requiredPermission={{ module: 'routeTracking', action: 'view' }}><RouteTracking /></ProtectedRoute>} />
+        <Route path="/stock-requests" element={<ProtectedRoute requiredPermission={{ module: 'stockRequests', action: 'view' }}><StockUpdateRequests /></ProtectedRoute>} />
+        <Route path="/dealer-application" element={<ProtectedRoute requiredPermission={{ module: 'dealerApplication', action: 'view' }}><DealerApplication /></ProtectedRoute>} />
+        <Route path="/payment-received" element={<Navigate to="/accounts" replace />} />
+        <Route path="/meeting" element={<ProtectedRoute requiredPermission={{ module: 'meeting', action: 'view' }}><Meeting /></ProtectedRoute>} />
+        <Route path="/chat" element={<ProtectedRoute requiredPermission={{ module: 'chat', action: 'view' }}><Chat /></ProtectedRoute>} />
 
         {/* Attendance - All Users */}
-        <Route
-          path="/my-attendance"
-          element={
-            <ProtectedRoute>
-              <MyAttendance />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/my-attendance" element={<Navigate to="/attendance-management" replace />} />
 
         {/* Branch Manager Routes */}
         <Route
           path="/branch-inventory"
           element={
-            <ProtectedRoute allowedRoles={['branch_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'branchStock', action: 'view' }}>
               <BranchInventory />
             </ProtectedRoute>
           }
@@ -249,7 +231,7 @@ function App() {
         <Route
           path="/salesmen"
           element={
-            <ProtectedRoute allowedRoles={['branch_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'users', action: 'view' }}>
               <Salesmen />
             </ProtectedRoute>
           }
@@ -257,24 +239,24 @@ function App() {
         <Route
           path="/branch-sales"
           element={
-            <ProtectedRoute allowedRoles={['branch_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'sales', action: 'view' }}>
               <AllSales />
             </ProtectedRoute>
           }
         />
-        <Route path="/all-branch-stock" element={<ProtectedRoute allowedRoles={['branch_manager']}><AllBranchStockView /></ProtectedRoute>} />
-        <Route path="/branch-orders" element={<ProtectedRoute allowedRoles={['branch_manager']}><Orders /></ProtectedRoute>} />
-        <Route path="/branch-attendance" element={<ProtectedRoute allowedRoles={['branch_manager']}><AttendanceManagement /></ProtectedRoute>} />
-        <Route path="/branch-expenditures" element={<ProtectedRoute allowedRoles={['branch_manager']}><Expenditures /></ProtectedRoute>} />
-        <Route path="/branch-leaves" element={<ProtectedRoute allowedRoles={['branch_manager']}><LeaveManagement /></ProtectedRoute>} />
-        <Route path="/branch-damages" element={<ProtectedRoute allowedRoles={['branch_manager']}><DamageTracking /></ProtectedRoute>} />
-        <Route path="/branch-stock-alerts" element={<ProtectedRoute allowedRoles={['branch_manager']}><StockAlerts /></ProtectedRoute>} />
+        <Route path="/all-branch-stock" element={<ProtectedRoute requiredPermission={{ module: 'branchStock', action: 'view' }}><AllBranchStockView /></ProtectedRoute>} />
+        <Route path="/branch-orders" element={<ProtectedRoute requiredPermission={{ module: 'orders', action: 'view' }}><Orders /></ProtectedRoute>} />
+        <Route path="/branch-attendance" element={<ProtectedRoute requiredPermission={{ module: 'attendanceManagement', action: 'view' }}><AttendanceManagement /></ProtectedRoute>} />
+        <Route path="/branch-expenditures" element={<ProtectedRoute requiredPermission={{ module: 'expenditures', action: 'view' }}><Expenditures /></ProtectedRoute>} />
+        <Route path="/branch-leaves" element={<ProtectedRoute requiredPermission={{ module: 'leaveManagement', action: 'view' }}><LeaveManagement /></ProtectedRoute>} />
+        <Route path="/branch-damages" element={<ProtectedRoute requiredPermission={{ module: 'damageTracking', action: 'view' }}><DamageTracking /></ProtectedRoute>} />
+        <Route path="/branch-stock-alerts" element={<ProtectedRoute requiredPermission={{ module: 'stockAlerts', action: 'view' }}><StockAlerts /></ProtectedRoute>} />
 
         {/* Salesman Routes */}
         <Route
           path="/my-route"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
+            <ProtectedRoute requiredPermission={{ module: 'routeTracking', action: 'view' }}>
               <MyRoute />
             </ProtectedRoute>
           }
@@ -282,7 +264,7 @@ function App() {
         <Route
           path="/my-stock"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
+            <ProtectedRoute requiredPermission={{ module: 'salesmanStock', action: 'view' }}>
               <MyStock />
             </ProtectedRoute>
           }
@@ -290,7 +272,7 @@ function App() {
         <Route
           path="/take-product"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
+            <ProtectedRoute requiredPermission={{ module: 'salesmanStock', action: 'view' }}>
               <TakeProduct />
             </ProtectedRoute>
           }
@@ -298,7 +280,7 @@ function App() {
         <Route
           path="/create-bill"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
+            <ProtectedRoute requiredPermission={{ module: 'sales', action: 'view' }}>
               <CreateBill />
             </ProtectedRoute>
           }
@@ -306,23 +288,27 @@ function App() {
         <Route
           path="/my-sales"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
+            <ProtectedRoute requiredPermission={{ module: 'sales', action: 'view' }}>
               <MySales />
             </ProtectedRoute>
           }
         />
+        {/* Self-service: creating/viewing your own orders needs no permission,
+            matching the backend (POST /api/orders is unguarded, GET /api/orders
+            self-scopes to the caller without orders.view). Approving/viewing
+            everyone's orders — the separate /orders page — stays permission-gated. */}
         <Route
           path="/my-orders"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
-              <MyOrders />
+            <ProtectedRoute>
+              <OrdersHub />
             </ProtectedRoute>
           }
         />
         <Route
           path="/my-expenditures"
           element={
-            <ProtectedRoute allowedRoles={['salesman']}>
+            <ProtectedRoute requiredPermission={{ module: 'expenditures', action: 'view' }}>
               <MyExpenditures />
             </ProtectedRoute>
           }
@@ -330,21 +316,13 @@ function App() {
         <Route
           path="/my-leaves"
           element={
-            <ProtectedRoute allowedRoles={['salesman', 'branch_manager']}>
+            <ProtectedRoute requiredPermission={{ module: 'leaveManagement', action: 'view' }}>
               <MyLeaves />
             </ProtectedRoute>
           }
         />
 
-        {/* Reports - All Roles */}
-        <Route
-          path="/reports"
-          element={
-            <ProtectedRoute>
-              <Reports />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/reports" element={<Navigate to="/accounts" replace />} />
 
         {/* Default Route */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

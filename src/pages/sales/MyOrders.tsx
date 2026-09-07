@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, ShoppingBag, Eye, MapPin, Edit2, Download, Share2 } from 'lucide-react';
+import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, ShoppingBag, Eye, MapPin, Edit2, Download, Share2, Filter } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
@@ -8,9 +8,6 @@ import type { OrderItem, Order } from '../../types';
 import { PurchaseInvoice } from '../../components/PurchaseInvoice';
 import { format } from 'date-fns';
 import './Sales.css';
-
-// GST Rate options (half values - CGST and SGST are equal)
-const GST_RATES = [2.5, 9];
 
 export function MyOrders() {
   const {
@@ -22,6 +19,10 @@ export function MyOrders() {
   const [activeTab, setActiveTab] = useState<'create' | 'list'>('create');
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [orderFilterStatus, setOrderFilterStatus] = useState<string>('all');
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [orderFromDate, setOrderFromDate] = useState('');
+  const [orderToDate, setOrderToDate] = useState('');
 
   // Create order form state
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,20 +30,6 @@ export function MyOrders() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [customerAddress, setCustomerAddress] = useState('');
-  const [customerGSTIN, setCustomerGSTIN] = useState('');
-  const [discount, setDiscount] = useState(0);
-  const [cgstRate, setCgstRate] = useState(2.5);
-  const [sgstRate, setSgstRate] = useState(2.5);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'upi' | 'credit' | 'check'>('cash');
-  const [amountPaid, setAmountPaid] = useState(0);
-
-  // Delivery Details
-  const [modeOfPayment, setModeOfPayment] = useState('');
-  const [destination, setDestination] = useState('');
-  const [vehicleNo, setVehicleNo] = useState('');
-  const [checkNumber, setCheckNumber] = useState('');
-  const [checkPhotoName, setCheckPhotoName] = useState('');
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const [orderLocation, setOrderLocation] = useState('');
@@ -54,6 +41,8 @@ export function MyOrders() {
   const [showOrderDetail, setShowOrderDetail] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
+  // branchId is required by the schema; when the current user has none (e.g. an
+  // admin placing an order), the server picks a fallback branch on create.
   const branchId = currentUser?.branchId || '';
 
   // Capture current location
@@ -138,14 +127,6 @@ export function MyOrders() {
     ));
   };
 
-  const updateCartItemAvailability = (productId: string, availability: 'available' | 'not_available') => {
-    setCart(cart.map(item =>
-      item.productId === productId
-        ? { ...item, availability }
-        : item
-    ));
-  };
-
   const updateCartItem = (productId: string, patch: Partial<OrderItem>) => {
     setCart(cart.map((item) => {
       if (item.productId !== productId) return item;
@@ -159,7 +140,7 @@ export function MyOrders() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-  const finalAmount = subtotal - discount;
+  const finalAmount = subtotal;
 
   const handleCreateOrder = async () => {
     if (!customerName.trim()) {
@@ -172,68 +153,24 @@ export function MyOrders() {
       return;
     }
 
-    if (!modeOfPayment.trim()) {
-      alert('Please enter mode/terms of payment');
-      return;
-    }
-
-    if (!destination.trim()) {
-      alert('Please enter destination');
-      return;
-    }
-
-    if (!vehicleNo.trim()) {
-      alert('Please enter vehicle number');
-      return;
-    }
-
-    if (!customerGSTIN.trim()) {
-      alert('Please enter customer GSTIN');
-      return;
-    }
-
     if (cart.length === 0) {
       alert('Please add items to cart');
       return;
     }
-    if (paymentMethod === 'check' && !checkPhotoName) {
-      alert('Check photo is compulsory for check payment.');
-      return;
-    }
 
     try {
-      // Calculate balance due and payment status
-      const balanceDue = Math.max(0, finalAmount - amountPaid);
-      let paymentStatus: 'paid' | 'partial' | 'unpaid' = 'unpaid';
-      if (balanceDue <= 0) {
-        paymentStatus = 'paid';
-      } else if (amountPaid > 0) {
-        paymentStatus = 'partial';
-      }
-
       const payload = {
         salesmanId: currentUser?.id || '',
-        branchId,
+        branchId: branchId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
-        customerAddress: customerAddress.trim(),
-        customerGSTIN: customerGSTIN.trim(),
         items: cart,
         totalAmount: subtotal,
-        discount,
         finalAmount,
-        amountPaid,
-        balanceDue,
-        paymentStatus,
-        cgstRate,
-        sgstRate,
-        paymentMethod: paymentMethod === 'check' ? 'credit' : paymentMethod,
-        modeOfPayment: paymentMethod === 'check'
-          ? `${modeOfPayment || 'Check'}${checkNumber ? ` (No: ${checkNumber})` : ''}${checkPhotoName ? ` [Photo: ${checkPhotoName}]` : ''}`
-          : modeOfPayment,
-        destination,
-        vehicleNo,
+        // Not collected in this simplified order-request form — required by
+        // the schema but not meaningful until the order is approved/billed.
+        paymentMethod: 'cash',
         orderLocation: orderLocation || undefined,
         orderDate: new Date()
       };
@@ -290,18 +227,6 @@ export function MyOrders() {
     setCustomerName('');
     setCustomerPhone('');
     setCustomerEmail('');
-    setCustomerAddress('');
-    setCustomerGSTIN('');
-    setDiscount(0);
-    setCgstRate(2.5);
-    setSgstRate(2.5);
-    setPaymentMethod('cash');
-    setAmountPaid(0);
-    setModeOfPayment('');
-    setDestination('');
-    setVehicleNo('');
-    setCheckNumber('');
-    setCheckPhotoName('');
     setEditingOrderId(null);
     setOrderSubmitted(false);
     setCreatedOrder(null);
@@ -317,16 +242,6 @@ export function MyOrders() {
     setCustomerName(order.customerName);
     setCustomerPhone(order.customerPhone || '');
     setCustomerEmail(order.customerEmail || '');
-    setCustomerAddress(order.customerAddress || '');
-    setCustomerGSTIN(order.customerGSTIN || '');
-    setDiscount(order.discount || 0);
-    setCgstRate(order.cgstRate || 2.5);
-    setSgstRate(order.sgstRate || 2.5);
-    setPaymentMethod(order.paymentMethod as typeof paymentMethod);
-    setAmountPaid(order.amountPaid || 0);
-    setModeOfPayment(order.modeOfPayment || '');
-    setDestination(order.destination || '');
-    setVehicleNo(order.vehicleNo || '');
     setCart(order.items.map((i) => ({ ...i })));
   };
 
@@ -339,6 +254,18 @@ export function MyOrders() {
       alert(error.message || 'Failed to delete order');
     }
   };
+
+  const filteredOrders = orders.filter((order) => {
+    const matchesStatus = orderFilterStatus === 'all' || order.orderStatus === orderFilterStatus;
+    const matchesSearch = orderSearchTerm === '' ||
+      order.orderNumber.toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(orderSearchTerm.toLowerCase()) ||
+      order.customerPhone?.includes(orderSearchTerm);
+    const orderDate = new Date(order.orderDate);
+    const matchesFrom = !orderFromDate || orderDate >= new Date(orderFromDate);
+    const matchesTo = !orderToDate || orderDate <= new Date(`${orderToDate}T23:59:59`);
+    return matchesStatus && matchesSearch && matchesFrom && matchesTo;
+  });
 
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -498,6 +425,51 @@ export function MyOrders() {
       {/* Orders List Tab */}
       {activeTab === 'list' && (
         <div className="card">
+          {orders.length > 0 && (
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
+              <div className="search-bar" style={{ flex: '1', margin: 0, minWidth: '220px' }}>
+                <Search size={20} />
+                <input
+                  type="text"
+                  placeholder="Search my orders..."
+                  value={orderSearchTerm}
+                  onChange={(e) => setOrderSearchTerm(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Filter size={18} />
+                <select
+                  className="form-select"
+                  value={orderFilterStatus}
+                  onChange={(e) => setOrderFilterStatus(e.target.value)}
+                  style={{ minWidth: '150px' }}
+                >
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="converted">Converted</option>
+                </select>
+              </div>
+              <input
+                type="date"
+                className="form-input"
+                value={orderFromDate}
+                onChange={(e) => setOrderFromDate(e.target.value)}
+                style={{ maxWidth: '160px' }}
+                title="From date"
+              />
+              <input
+                type="date"
+                className="form-input"
+                value={orderToDate}
+                onChange={(e) => setOrderToDate(e.target.value)}
+                style={{ maxWidth: '160px' }}
+                title="To date"
+              />
+            </div>
+          )}
           <div className="table-container">
             {isLoading ? (
               <div className="loading">Loading orders...</div>
@@ -505,6 +477,11 @@ export function MyOrders() {
               <div className="empty-state">
                 <ShoppingBag size={48} className="empty-state-icon" />
                 <p>No orders yet. Create your first order!</p>
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="empty-state">
+                <ShoppingBag size={48} className="empty-state-icon" />
+                <p>No orders match your filters.</p>
               </div>
             ) : (
               <table className="table">
@@ -519,7 +496,7 @@ export function MyOrders() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => (
+                  {filteredOrders.map((order) => (
                     <tr key={order.id}>
                       <td><strong>{order.orderNumber}</strong></td>
                       <td>
@@ -620,21 +597,19 @@ export function MyOrders() {
                                 <Plus size={16} />
                               </button>
                             </div>
-                            <select
-                              value={cartItem.availability}
-                              onChange={(e) => updateCartItemAvailability(product.id, e.target.value as 'available' | 'not_available')}
+                            <input
+                              type="text"
+                              value={cartItem.unit || ''}
+                              onChange={(e) => updateCartItem(product.id, { unit: e.target.value })}
+                              placeholder="Unit"
                               style={{
+                                width: '80px',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 border: '1px solid #d1d5db',
                                 fontSize: '12px',
-                                background: cartItem.availability === 'available' ? '#d4edda' : '#f8d7da',
-                                color: cartItem.availability === 'available' ? '#155724' : '#721c24'
                               }}
-                            >
-                              <option value="available">Available</option>
-                              <option value="not_available">Not Available</option>
-                            </select>
+                            />
                           </div>
                         ) : (
                           <button
@@ -719,145 +694,6 @@ export function MyOrders() {
                   placeholder="Customer email"
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Address (Optional)</label>
-                <textarea
-                  className="form-input"
-                  value={customerAddress}
-                  onChange={(e) => setCustomerAddress(e.target.value)}
-                  placeholder="Customer address"
-                  rows={2}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">GSTIN *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={customerGSTIN}
-                  onChange={(e) => setCustomerGSTIN(e.target.value)}
-                  placeholder="Customer GSTIN"
-                />
-              </div>
-              <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">CGST Rate (%)</label>
-                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
-                    {GST_RATES.map(rate => (
-                      <button
-                        key={rate}
-                        type="button"
-                        onClick={() => setCgstRate(rate)}
-                        style={{
-                          padding: '4px 12px',
-                          border: cgstRate === rate ? '2px solid #4f46e5' : '1px solid #d1d5db',
-                          borderRadius: '4px',
-                          background: cgstRate === rate ? '#e0e7ff' : '#fff',
-                          color: cgstRate === rate ? '#4f46e5' : '#374151',
-                          fontWeight: cgstRate === rate ? '600' : '400',
-                          cursor: 'pointer',
-                          fontSize: '13px'
-                        }}
-                      >
-                        {rate}%
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={cgstRate}
-                    onChange={(e) => setCgstRate(parseFloat(e.target.value) || 0)}
-                    placeholder="Or enter custom rate"
-                    min="0"
-                    max="50"
-                    step="0.5"
-                    style={{ fontSize: '13px' }}
-                  />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">SGST Rate (%)</label>
-                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
-                    {GST_RATES.map(rate => (
-                      <button
-                        key={rate}
-                        type="button"
-                        onClick={() => setSgstRate(rate)}
-                        style={{
-                          padding: '4px 12px',
-                          border: sgstRate === rate ? '2px solid #4f46e5' : '1px solid #d1d5db',
-                          borderRadius: '4px',
-                          background: sgstRate === rate ? '#e0e7ff' : '#fff',
-                          color: sgstRate === rate ? '#4f46e5' : '#374151',
-                          fontWeight: sgstRate === rate ? '600' : '400',
-                          cursor: 'pointer',
-                          fontSize: '13px'
-                        }}
-                      >
-                        {rate}%
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={sgstRate}
-                    onChange={(e) => setSgstRate(parseFloat(e.target.value) || 0)}
-                    placeholder="Or enter custom rate"
-                    min="0"
-                    max="50"
-                    step="0.5"
-                    style={{ fontSize: '13px' }}
-                  />
-                </div>
-              </div>
-              <div className="gst-total-info" style={{ padding: '8px 12px', background: '#e8f5e9', borderRadius: '4px', fontSize: '13px', color: '#2e7d32' }}>
-                Total GST: {cgstRate + sgstRate}% (CGST {cgstRate}% + SGST {sgstRate}%)
-              </div>
-
-              {/* Delivery Details Section */}
-              <div style={{ marginTop: '16px', padding: '12px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef' }}>
-                <h4 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#495057' }}>Delivery Details</h4>
-
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Mode/Terms of Payment *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={modeOfPayment}
-                      onChange={(e) => setModeOfPayment(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Destination *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontSize: '12px' }}>Vehicle No. *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={vehicleNo}
-                      onChange={(e) => setVehicleNo(e.target.value)}
-                      placeholder=""
-                      style={{ padding: '6px 10px', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="cart-items">
@@ -865,19 +701,10 @@ export function MyOrders() {
                 cart.map((item) => (
                   <div className="cart-item" key={item.productId}>
                     <div className="cart-item-info">
-                      <div className="cart-item-name">
-                        {item.productName}
-                        {item.availability === 'not_available' && (
-                          <span style={{ marginLeft: '8px', padding: '2px 6px', background: '#f8d7da', color: '#721c24', borderRadius: '4px', fontSize: '10px' }}>
-                            Not Available
-                          </span>
-                        )}
-                      </div>
+                      <div className="cart-item-name">{item.productName}</div>
                       <div className="cart-item-details" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))', gap: '6px', marginTop: '6px' }}>
-                        <input type="number" className="form-input" value={item.price} min="0" step="0.01" onChange={(e) => updateCartItem(item.productId, { price: parseFloat(e.target.value) || 0 })} placeholder="Rate" />
-                        <input type="text" className="form-input" value={item.batchNo || ''} onChange={(e) => updateCartItem(item.productId, { batchNo: e.target.value })} placeholder="Batch No" />
-                        <input type="date" className="form-input" value={item.mfgDate || ''} onChange={(e) => updateCartItem(item.productId, { mfgDate: e.target.value })} placeholder="MFG Date" />
-                        <input type="date" className="form-input" value={item.expDate || ''} onChange={(e) => updateCartItem(item.productId, { expDate: e.target.value })} placeholder="EXP Date" />
+                        <input type="number" className="form-input" value={item.quantity} min="1" onChange={(e) => updateCartItemQty(item.productId, parseInt(e.target.value) || 0)} placeholder="Quantity" />
+                        <input type="text" className="form-input" value={item.unit || ''} onChange={(e) => updateCartItem(item.productId, { unit: e.target.value })} placeholder="Unit" />
                       </div>
                     </div>
                     <span className="cart-item-total">₹{(item.quantity * item.price).toFixed(2)}</span>
@@ -897,124 +724,19 @@ export function MyOrders() {
             </div>
 
             <div className="bill-totals">
-              <div className="bill-row">
-                <label>Subtotal:</label>
-                <span>₹{subtotal.toLocaleString()}</span>
-              </div>
-              <div className="bill-row">
-                <label>Discount:</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  style={{ width: '100px', padding: '6px 10px' }}
-                  value={discount || ''}
-                  onChange={(e) => setDiscount(parseInt(e.target.value) || 0)}
-                  placeholder="0"
-                  min="0"
-                  max={subtotal}
-                />
-              </div>
               <div className="bill-row total">
                 <label>Total:</label>
                 <span>₹{finalAmount.toLocaleString()}</span>
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Payment Method</label>
-              <select
-                className="form-select"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
-              >
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="upi">UPI</option>
-                <option value="credit">Credit</option>
-                <option value="check">Check</option>
-              </select>
-            </div>
-            {paymentMethod === 'check' && (
-              <div style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Check Number</label>
-                    <input className="form-input" value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Check Photo (Compulsory)</label>
-                    <input type="file" accept="image/*" capture="environment" onChange={(e) => setCheckPhotoName(e.target.files?.[0]?.name || '')} />
-                    {checkPhotoName && <div style={{ fontSize: 12, marginTop: 4 }}>{checkPhotoName}</div>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Amount Received Section */}
-            <div style={{ marginTop: '16px', padding: '12px', background: '#fff8e1', borderRadius: '8px', border: '1px solid #ffecb3' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#f57c00' }}>Payment Details</h4>
-              <div className="form-group" style={{ marginBottom: '8px' }}>
-                <label className="form-label" style={{ fontSize: '12px' }}>Amount Received (₹)</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={amountPaid || ''}
-                  onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
-                  placeholder="0"
-                  min="0"
-                  max={finalAmount + 10000}
-                  style={{ fontSize: '16px', fontWeight: '600' }}
-                />
-              </div>
-
-              {/* Balance Due / Fully Paid */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: amountPaid >= finalAmount ? '#e8f5e9' : '#ffebee', borderRadius: '4px', marginTop: '8px' }}>
-                <span style={{ fontSize: '13px', color: amountPaid >= finalAmount ? '#2e7d32' : '#c62828' }}>
-                  {amountPaid >= finalAmount ? 'Fully Paid' : 'Balance Due (Outstanding)'}
-                </span>
-                <span style={{ fontSize: '14px', fontWeight: '600', color: amountPaid >= finalAmount ? '#2e7d32' : '#c62828' }}>
-                  ₹{Math.max(0, finalAmount - amountPaid).toLocaleString()}
-                </span>
-              </div>
-
-              {/* Advance Amount if paid more than total */}
-              {amountPaid > finalAmount && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#e3f2fd', borderRadius: '4px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '13px', color: '#1565c0' }}>Advance Amount</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#1565c0' }}>
-                    ₹{(amountPaid - finalAmount).toLocaleString()}
-                  </span>
-                </div>
-              )}
-
-              {/* Payment Summary */}
-              <div style={{ marginTop: '12px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '12px', color: '#666' }}>Total Amount:</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600' }}>₹{finalAmount.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '12px', color: '#666' }}>Amount Paid:</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#2e7d32' }}>₹{amountPaid.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #ddd', paddingTop: '4px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: amountPaid >= finalAmount ? '#1565c0' : '#c62828' }}>
-                    {amountPaid >= finalAmount ? 'Advance:' : 'Outstanding:'}
-                  </span>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: amountPaid >= finalAmount ? '#1565c0' : '#c62828' }}>
-                    ₹{Math.abs(finalAmount - amountPaid).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
             <button
               className="btn btn-success btn-block btn-lg"
               onClick={handleCreateOrder}
-              disabled={cart.length === 0 || !customerName.trim() || !customerPhone.trim() || !customerGSTIN.trim() || !modeOfPayment.trim() || !destination.trim() || !vehicleNo.trim() || (paymentMethod === 'check' && !checkPhotoName)}
+              disabled={cart.length === 0 || !customerName.trim() || !customerPhone.trim()}
             >
               <Send size={20} />
-              {editingOrderId ? 'Update Purchase Invoice' : 'Generate Purchase Invoice'}
+              {editingOrderId ? 'Update Order' : 'Send Order for Verification'}
             </button>
           </div>
         </div>

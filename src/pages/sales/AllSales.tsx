@@ -48,7 +48,7 @@ export function AllSales() {
   const billRef = useRef<HTMLDivElement>(null);
 
   // For branch managers, only show their branch sales
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   const branchFilter = isBranchManager ? currentUser?.branchId : selectedBranch;
 
   // Filter sales

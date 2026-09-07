@@ -17,8 +17,8 @@ import '../stock/Stock.css';
 
 export function StockUpdateRequests() {
   const { currentUser, products } = useStore();
-  const isAdmin = currentUser?.role === 'stock_manager';
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isAdmin = currentUser?.dataScope === 'all';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
 
   const [requests, setRequests] = useState<StockUpdateRequest[]>([]);
   const [loading, setLoading] = useState(true);

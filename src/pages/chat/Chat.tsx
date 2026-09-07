@@ -10,7 +10,6 @@ import {
 } from '../../services/api';
 
 const POLL_MS = 5000;
-const ADMIN_ROLES = ['stock_manager', 'account_manager', 'branch_manager'];
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -42,7 +41,9 @@ function conversationSubtitle(c: ChatConversation, myId: string): string {
 export function Chat() {
   const { currentUser } = useStore();
   const myId = currentUser?.id || '';
-  const canBroadcast = !!currentUser?.role && ADMIN_ROLES.includes(currentUser.role);
+  // Matches the backend's canBroadcastChat(): anyone above the most
+  // restrictive (own_records) data scope can broadcast.
+  const canBroadcast = currentUser?.dataScope !== 'own_records';
 
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);

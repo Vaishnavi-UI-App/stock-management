@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, Building2, User, Camera, Upload, Eye, FileText, Building, Briefcase, ChevronDown, ChevronUp, MessageCircle, Send } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import type { UserRole } from '../../types';
+import { rolesApi } from '../../services/api';
+import type { Role } from '../../types';
 import './Stock.css';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -11,6 +12,7 @@ export function Users() {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [filterRole, setFilterRole] = useState<string>('');
+  const [roles, setRoles] = useState<Role[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ type: string; data: string } | null>(null);
@@ -27,7 +29,7 @@ export function Users() {
     email: '',
     password: '',
     phone: '',
-    role: 'salesman' as UserRole,
+    roleId: '',
     branchId: '',
     profilePhoto: '',
     employeeCode: '',
@@ -64,6 +66,12 @@ export function Users() {
     pfDeduction: ''
   });
 
+  useEffect(() => {
+    rolesApi.getAll().then(setRoles).catch(() => setRoles([]));
+  }, []);
+
+  const selectedRole = roles.find(r => r.id === formData.roleId);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -90,7 +98,7 @@ export function Users() {
           email: user.email,
           password: '',
           phone: user.phone,
-          role: user.role,
+          roleId: user.roleId || '',
           branchId: user.branchId || '',
           profilePhoto: user.profilePhoto || '',
           employeeCode: user.employeeCode || '',
@@ -133,7 +141,7 @@ export function Users() {
         email: '',
         password: '',
         phone: '',
-        role: 'salesman',
+        roleId: '',
         branchId: '',
         profilePhoto: '',
         employeeCode: '',
@@ -189,8 +197,11 @@ export function Users() {
       email: formData.email,
       password: plainPassword,
       phone: formData.phone,
-      role: formData.role,
-      branchId: formData.role !== 'stock_manager' && formData.role !== 'account_manager' ? formData.branchId : undefined,
+      roleId: formData.roleId || undefined,
+      // Branch assignment applies to any role scoped below 'all' — both
+      // own_branch roles (e.g. a branch manager) and own_records roles
+      // (e.g. a salesman) still belong to a specific branch.
+      branchId: selectedRole && selectedRole.dataScope !== 'all' ? formData.branchId : undefined,
       profilePhoto: formData.profilePhoto || undefined,
       employeeCode: formData.employeeCode || undefined,
       aadharCard: formData.aadharCard || undefined,
@@ -263,24 +274,12 @@ export function Users() {
     }
   };
 
-  const getRoleBadgeClass = (role: UserRole) => {
-    switch (role) {
-      case 'stock_manager': return 'badge-primary';
-      case 'account_manager': return 'badge-info';
-      case 'branch_manager': return 'badge-success';
-      case 'salesman': return 'badge-warning';
-      default: return 'badge-primary';
-    }
+  const getRoleBadgeClass = (roleName?: string | null) => {
+    return roleName ? 'badge-primary' : 'badge-warning';
   };
 
-  const getRoleLabel = (role: UserRole) => {
-    switch (role) {
-      case 'stock_manager': return 'Stock Manager';
-      case 'account_manager': return 'Account Manager';
-      case 'branch_manager': return 'Branch Manager';
-      case 'salesman': return 'Salesman';
-      default: return role;
-    }
+  const getRoleLabel = (roleName?: string | null) => {
+    return roleName || 'No Role Assigned';
   };
 
   const sendViaWhatsApp = (phone: string, name: string, email: string, password: string) => {
@@ -296,7 +295,7 @@ export function Users() {
 
   const filteredUsers = users.filter(user => {
     if (!filterRole) return true;
-    return user.role === filterRole;
+    return user.roleId === filterRole;
   });
 
   return (
@@ -319,10 +318,9 @@ export function Users() {
           onChange={(e) => setFilterRole(e.target.value)}
         >
           <option value="">All Roles</option>
-          <option value="stock_manager">Stock Manager</option>
-          <option value="account_manager">Account Manager</option>
-          <option value="branch_manager">Branch Manager</option>
-          <option value="salesman">Salesman</option>
+          {roles.map((role) => (
+            <option key={role.id} value={role.id}>{role.name}</option>
+          ))}
         </select>
       </div>
 
@@ -355,7 +353,7 @@ export function Users() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span className={`badge ${getRoleBadgeClass(user.role)}`}>{getRoleLabel(user.role)}</span>
+                  <span className={`badge ${getRoleBadgeClass(user.roleName)}`}>{getRoleLabel(user.roleName)}</span>
                   {branch && (
                     <span className="badge badge-primary">
                       <Building2 size={12} style={{ marginRight: '4px' }} />
@@ -418,7 +416,7 @@ export function Users() {
                       </h4>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
                         {user.employeeCode && <div><span style={{ color: '#94a3b8' }}>Employee Code:</span> <strong>{user.employeeCode}</strong></div>}
-                        <div><span style={{ color: '#94a3b8' }}>Role:</span> {getRoleLabel(user.role)}</div>
+                        <div><span style={{ color: '#94a3b8' }}>Role:</span> {getRoleLabel(user.roleName)}</div>
                         {branch && <div><span style={{ color: '#94a3b8' }}>Branch:</span> {branch.name}</div>}
                         {user.dateOfJoining && <div><span style={{ color: '#94a3b8' }}>Date of Joining:</span> {new Date(user.dateOfJoining).toLocaleDateString('en-IN')}</div>}
                         {user.monthlySalary && <div><span style={{ color: '#94a3b8' }}>Monthly Salary:</span> <span style={{ color: '#22c55e', fontWeight: 600 }}>₹{user.monthlySalary.toLocaleString()}</span></div>}
@@ -599,24 +597,23 @@ export function Users() {
                     <label className="form-label">Role</label>
                     <select
                       className="form-select"
-                      value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                      value={formData.roleId}
+                      onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
                       required
                     >
-                      <option value="salesman">Salesman</option>
-                      <option value="branch_manager">Branch Manager</option>
-                      <option value="account_manager">Account Manager</option>
-                      <option value="stock_manager">Stock Manager</option>
+                      <option value="">Select Role</option>
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>{role.name}</option>
+                      ))}
                     </select>
                   </div>
-                  {formData.role !== 'stock_manager' && formData.role !== 'account_manager' && (
+                  {selectedRole && selectedRole.dataScope !== 'all' && (
                     <div className="form-group">
                       <label className="form-label">Branch</label>
                       <select
                         className="form-select"
                         value={formData.branchId}
                         onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
-                        required
                       >
                         <option value="">Select Branch</option>
                         {branches.map((branch) => (

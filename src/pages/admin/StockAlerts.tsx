@@ -6,7 +6,7 @@ import '../stock/Stock.css';
 
 export function StockAlerts() {
   const { products, fetchProducts, currentUser } = useStore();
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);

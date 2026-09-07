@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { ShoppingBag, Eye, CheckCircle, XCircle, Printer, Clock, Filter, Search, Download, Share2 } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { ShoppingBag, Eye, CheckCircle, XCircle, Printer, Clock, Filter, Search, Download, Share2, ListChecks, ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { ordersApi } from '../../services/api';
 import { useStore } from '../../store/useStore';
-import type { Order } from '../../types';
+import type { Order, OrderItem } from '../../types';
 import { PurchaseInvoice } from '../../components/PurchaseInvoice';
 import { downloadPdfFromRef, shareWhatsAppFromRef } from '../../utils/pdfShare';
 // TaxInvoice available if needed
@@ -11,18 +11,27 @@ import { format } from 'date-fns';
 import '../sales/Sales.css';
 
 export function Orders() {
-  const { getUserById, getBranchById, currentUser } = useStore();
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const { getUserById, getBranchById, currentUser, products } = useStore();
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [orderToReject, setOrderToReject] = useState<Order | null>(null);
+  const [showRequirement, setShowRequirement] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
+
+  // Editing a pending order: adjust quantities, remove items, add new products
+  const [isEditingOrder, setIsEditingOrder] = useState(false);
+  const [editItems, setEditItems] = useState<OrderItem[]>([]);
+  const [addProductId, setAddProductId] = useState('');
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -86,6 +95,87 @@ export function Orders() {
     setShowRejectModal(true);
   };
 
+  const startEditingOrder = () => {
+    if (!selectedOrder) return;
+    setEditItems(selectedOrder.items.map((item) => ({ ...item })));
+    setAddProductId('');
+    setIsEditingOrder(true);
+  };
+
+  const cancelEditingOrder = () => {
+    setIsEditingOrder(false);
+    setEditItems([]);
+    setAddProductId('');
+  };
+
+  const updateEditItemQty = (productId: string, quantity: number) => {
+    if (quantity <= 0) {
+      setEditItems((items) => items.filter((item) => item.productId !== productId));
+      return;
+    }
+    setEditItems((items) => items.map((item) =>
+      item.productId === productId ? { ...item, quantity, total: quantity * item.price } : item
+    ));
+  };
+
+  const removeEditItem = (productId: string) => {
+    setEditItems((items) => items.filter((item) => item.productId !== productId));
+  };
+
+  const addEditProduct = () => {
+    if (!addProductId) return;
+    const product = products.find((p) => p.id === addProductId);
+    if (!product) return;
+
+    setEditItems((items) => {
+      const existing = items.find((item) => item.productId === addProductId);
+      if (existing) {
+        const quantity = existing.quantity + 1;
+        return items.map((item) =>
+          item.productId === addProductId ? { ...item, quantity, total: quantity * item.price } : item
+        );
+      }
+      return [...items, {
+        productId: product.id,
+        productName: product.name,
+        quantity: 1,
+        price: product.price,
+        total: product.price,
+        hsnCode: product.sku,
+        unit: product.unit,
+        availability: 'available',
+      }];
+    });
+    setAddProductId('');
+  };
+
+  const editSubtotal = editItems.reduce((sum, item) => sum + item.total, 0);
+
+  const saveOrderEdits = async () => {
+    if (!selectedOrder) return;
+    if (editItems.length === 0) {
+      alert('Order must have at least one item');
+      return;
+    }
+
+    setIsSavingOrder(true);
+    try {
+      const updated = await ordersApi.update(selectedOrder.id, {
+        items: editItems,
+        totalAmount: editSubtotal,
+        finalAmount: editSubtotal,
+      });
+      setSelectedOrder(updated);
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setIsEditingOrder(false);
+      setEditItems([]);
+    } catch (error: any) {
+      alert(error.message || 'Failed to save order changes');
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -129,11 +219,41 @@ export function Orders() {
     const matchesSearch = searchTerm === '' ||
       order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customerPhone?.includes(searchTerm);
-    return matchesStatus && matchesSearch;
+      order.customerPhone?.includes(searchTerm) ||
+      order.items.some(item => item.productName.toLowerCase().includes(searchTerm.toLowerCase()));
+    const orderDate = new Date(order.orderDate);
+    const matchesFrom = !fromDate || orderDate >= new Date(fromDate);
+    const matchesTo = !toDate || orderDate <= new Date(`${toDate}T23:59:59`);
+    return matchesStatus && matchesSearch && matchesFrom && matchesTo;
   });
 
   const pendingCount = orders.filter(o => o.orderStatus === 'pending').length;
+
+  // Total quantity required per product across the currently filtered orders
+  // (e.g. filter Status to "Pending" to see exactly how much of each item is
+  // still needed to fulfil open orders) — the demand figure the company uses
+  // to decide what to stock/procure.
+  const itemRequirements = useMemo(() => {
+    const byProduct = new Map<string, { productName: string; unit: string; quantity: number; orderCount: number }>();
+    for (const order of filteredOrders) {
+      for (const item of order.items) {
+        const key = item.productId || item.productName;
+        const existing = byProduct.get(key);
+        if (existing) {
+          existing.quantity += item.quantity;
+          existing.orderCount += 1;
+        } else {
+          byProduct.set(key, {
+            productName: item.productName,
+            unit: item.unit || '',
+            quantity: item.quantity,
+            orderCount: 1,
+          });
+        }
+      }
+    }
+    return Array.from(byProduct.values()).sort((a, b) => b.quantity - a.quantity);
+  }, [filteredOrders]);
 
   // Detail view
   if (viewMode === 'detail' && selectedOrder) {
@@ -151,33 +271,52 @@ export function Orders() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button className="btn btn-primary" onClick={handlePrint}>
-              <Printer size={18} />
-              Print
-            </button>
-            <button className="btn btn-secondary" onClick={handleDownload}>
-              <Download size={18} />
-              Download
-            </button>
-            <button className="btn btn-success" onClick={handleShare} style={{ background: '#25D366', borderColor: '#25D366' }}>
-              <Share2 size={18} />
-              Share
-            </button>
-            {selectedOrder.orderStatus === 'pending' && (
+            {isEditingOrder ? (
               <>
-                <button className="btn btn-success" onClick={() => handleApprove(selectedOrder)}>
+                <button className="btn btn-success" onClick={saveOrderEdits} disabled={isSavingOrder}>
                   <CheckCircle size={18} />
-                  Approve
+                  {isSavingOrder ? 'Saving...' : 'Save Changes'}
                 </button>
-                <button className="btn btn-danger" onClick={() => openRejectModal(selectedOrder)}>
-                  <XCircle size={18} />
-                  Reject
+                <button className="btn btn-secondary" onClick={cancelEditingOrder} disabled={isSavingOrder}>
+                  <X size={18} />
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-primary" onClick={handlePrint}>
+                  <Printer size={18} />
+                  Print
+                </button>
+                <button className="btn btn-secondary" onClick={handleDownload}>
+                  <Download size={18} />
+                  Download
+                </button>
+                <button className="btn btn-success" onClick={handleShare} style={{ background: '#25D366', borderColor: '#25D366' }}>
+                  <Share2 size={18} />
+                  Share
+                </button>
+                {selectedOrder.orderStatus === 'pending' && (
+                  <>
+                    <button className="btn btn-secondary" onClick={startEditingOrder}>
+                      <Pencil size={18} />
+                      Edit Order
+                    </button>
+                    <button className="btn btn-success" onClick={() => handleApprove(selectedOrder)}>
+                      <CheckCircle size={18} />
+                      Approve
+                    </button>
+                    <button className="btn btn-danger" onClick={() => openRejectModal(selectedOrder)}>
+                      <XCircle size={18} />
+                      Reject
+                    </button>
+                  </>
+                )}
+                <button className="btn btn-secondary" onClick={() => { setViewMode('list'); setSelectedOrder(null); }}>
+                  Back to List
                 </button>
               </>
             )}
-            <button className="btn btn-secondary" onClick={() => { setViewMode('list'); setSelectedOrder(null); }}>
-              Back to List
-            </button>
           </div>
         </div>
 
@@ -197,7 +336,9 @@ export function Orders() {
           </div>
           <div style={{ padding: '16px', background: '#f8f9fa', borderRadius: '8px' }}>
             <div style={{ fontSize: '12px', color: '#6c757d' }}>Amount</div>
-            <div style={{ fontSize: '14px', fontWeight: '600' }}>₹{selectedOrder.finalAmount.toLocaleString()}</div>
+            <div style={{ fontSize: '14px', fontWeight: '600' }}>
+              ₹{(isEditingOrder ? editSubtotal : selectedOrder.finalAmount).toLocaleString()}
+            </div>
           </div>
         </div>
 
@@ -213,33 +354,78 @@ export function Orders() {
                   <th>Quantity</th>
                   <th>Price</th>
                   <th>Total</th>
-                  <th>Availability</th>
+                  {isEditingOrder ? <th></th> : <th>Availability</th>}
                 </tr>
               </thead>
               <tbody>
-                {selectedOrder.items.map((item, index) => (
-                  <tr key={index} style={item.availability === 'not_available' ? { background: '#fff3cd' } : undefined}>
+                {(isEditingOrder ? editItems : selectedOrder.items).map((item, index) => (
+                  <tr key={item.productId || index} style={!isEditingOrder && item.availability === 'not_available' ? { background: '#fff3cd' } : undefined}>
                     <td>{index + 1}</td>
                     <td>{item.productName}</td>
-                    <td>{item.quantity} {item.unit}</td>
+                    <td>
+                      {isEditingOrder ? (
+                        <input
+                          type="number"
+                          min="1"
+                          className="form-input"
+                          style={{ width: '90px' }}
+                          value={item.quantity}
+                          onChange={(e) => updateEditItemQty(item.productId, parseInt(e.target.value) || 0)}
+                        />
+                      ) : (
+                        <>{item.quantity} {item.unit}</>
+                      )}
+                    </td>
                     <td>₹{item.price}</td>
                     <td>₹{item.total.toLocaleString()}</td>
-                    <td>
-                      <span style={{
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        background: item.availability === 'available' ? '#d4edda' : '#f8d7da',
-                        color: item.availability === 'available' ? '#155724' : '#721c24'
-                      }}>
-                        {item.availability === 'available' ? 'Available' : 'Not Available'}
-                      </span>
-                    </td>
+                    {isEditingOrder ? (
+                      <td>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          title="Remove item"
+                          onClick={() => removeEditItem(item.productId)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    ) : (
+                      <td>
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          background: item.availability === 'available' ? '#d4edda' : '#f8d7da',
+                          color: item.availability === 'available' ? '#155724' : '#721c24'
+                        }}>
+                          {item.availability === 'available' ? 'Available' : 'Not Available'}
+                        </span>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {isEditingOrder && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center' }}>
+              <select
+                className="form-select"
+                style={{ minWidth: '260px' }}
+                value={addProductId}
+                onChange={(e) => setAddProductId(e.target.value)}
+              >
+                <option value="">Select a product to add...</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} — ₹{p.price} / {p.unit}</option>
+                ))}
+              </select>
+              <button className="btn btn-secondary" onClick={addEditProduct} disabled={!addProductId}>
+                <Plus size={16} />
+                Add Product
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Rejection reason if rejected */}
@@ -263,13 +449,62 @@ export function Orders() {
           <h1>Orders Management</h1>
           <p>Review and approve purchase invoices from salesmen</p>
         </div>
-        {pendingCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#fff3cd', borderRadius: '8px' }}>
-            <Clock size={20} style={{ color: '#856404' }} />
-            <span style={{ fontWeight: '600', color: '#856404' }}>{pendingCount} Pending Approval</span>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {pendingCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', background: '#fff3cd', borderRadius: '8px' }}>
+              <Clock size={20} style={{ color: '#856404' }} />
+              <span style={{ fontWeight: '600', color: '#856404' }}>{pendingCount} Pending Approval</span>
+            </div>
+          )}
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowRequirement(v => !v)}
+          >
+            <ListChecks size={18} />
+            Item Requirement
+            {showRequirement ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
       </div>
+
+      {/* Item-wise requirement — total quantity needed per product across the
+          orders matching the current filters. Filter Status to "Pending" first
+          to see outstanding demand still waiting to be fulfilled. */}
+      {showRequirement && (
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <div style={{ marginBottom: '12px' }}>
+            <h3 style={{ margin: 0 }}>Item-wise Requirement</h3>
+            <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#6b7280' }}>
+              Total quantity required per item across the {filteredOrders.length} order(s) matching the filters above.
+              {filterStatus === 'all' && ' Set Status to "Pending" to see only outstanding demand.'}
+            </p>
+          </div>
+          {itemRequirements.length === 0 ? (
+            <p style={{ color: '#6b7280', padding: '12px 0' }}>No items in the filtered orders.</p>
+          ) : (
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Total Quantity Required</th>
+                    <th>Orders</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemRequirements.map((req) => (
+                    <tr key={req.productName}>
+                      <td>{req.productName}</td>
+                      <td><strong>{req.quantity}</strong> {req.unit}</td>
+                      <td>{req.orderCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card" style={{ marginBottom: '20px' }}>
@@ -278,7 +513,7 @@ export function Orders() {
             <Search size={20} />
             <input
               type="text"
-              placeholder="Search orders..."
+              placeholder="Search by order #, customer, phone, or item..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="form-input"
@@ -299,6 +534,22 @@ export function Orders() {
               <option value="converted">Converted</option>
             </select>
           </div>
+          <input
+            type="date"
+            className="form-input"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={{ maxWidth: '160px' }}
+            title="From date"
+          />
+          <input
+            type="date"
+            className="form-input"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={{ maxWidth: '160px' }}
+            title="To date"
+          />
         </div>
       </div>
 

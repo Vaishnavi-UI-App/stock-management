@@ -11,7 +11,7 @@ import '../stock/Stock.css';
 
 export function Expenditures() {
   const { currentUser } = useStore();
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [users, setUsers] = useState<UserType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,7 +46,7 @@ export function Expenditures() {
   const fetchUsers = async () => {
     try {
       const data = await usersApi.getAll();
-      let filtered = data.filter((u: any) => u.role === 'salesman');
+      let filtered = data.filter((u: any) => u.dataScope === 'own_records');
       // Branch manager only sees their branch employees
       if (isBranchManager && currentUser?.branchId) {
         filtered = filtered.filter((u: any) => u.branchId === currentUser.branchId);

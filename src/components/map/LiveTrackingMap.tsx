@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, LayersControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, LayersControl } from 'react-leaflet';
 import L from 'leaflet';
 import type { LiveTrackingData, CustomerVisit } from '../../services/api';
 import 'leaflet/dist/leaflet.css';
@@ -27,6 +27,21 @@ interface LiveTrackingMapProps {
   routePoints?: LocationPoint[];
   visits?: CustomerVisit[];
   height?: string;
+  /** Up to two salesman ids to connect with a distance line (tap two markers to compare) */
+  compareAId?: string | null;
+  compareBId?: string | null;
+}
+
+// Straight-line (as-the-crow-flies) distance between two GPS points, in km
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 function getInitials(name: string): string {
@@ -38,8 +53,8 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-function createSalesmanIcon(name: string, isOnline: boolean, isSelected: boolean): L.DivIcon {
-  const classes = `salesman-marker ${isOnline ? 'online' : 'offline'} ${isSelected ? 'selected' : ''}`;
+function createSalesmanIcon(name: string, isOnline: boolean, isSelected: boolean, isComparing: boolean = false): L.DivIcon {
+  const classes = `salesman-marker ${isOnline ? 'online' : 'offline'} ${isComparing ? 'comparing' : (isSelected ? 'selected' : '')}`;
   return L.divIcon({
     className: '',
     html: `<div class="${classes}">${getInitials(name)}</div>`,
@@ -154,6 +169,8 @@ export function LiveTrackingMap({
   routePoints = [],
   visits = [],
   height = '500px',
+  compareAId = null,
+  compareBId = null,
 }: LiveTrackingMapProps) {
   // Default center: India
   const defaultCenter: [number, number] = [20.5937, 78.9629];
@@ -163,6 +180,23 @@ export function LiveTrackingMap({
   const routeLatLngs = useMemo(() => {
     return routePoints.map(p => [p.latitude, p.longitude] as [number, number]);
   }, [routePoints]);
+
+  // Distance line between two tapped/selected salesmen (based on last known location,
+  // so it still works even if one of them has closed the app)
+  const compareA = compareAId ? salesmen.find(s => s.salesman.id === compareAId) : undefined;
+  const compareB = compareBId ? salesmen.find(s => s.salesman.id === compareBId) : undefined;
+  const compareLine = (compareA?.lastLocation && compareB?.lastLocation)
+    ? {
+        positions: [
+          [compareA.lastLocation.latitude, compareA.lastLocation.longitude],
+          [compareB.lastLocation.latitude, compareB.lastLocation.longitude],
+        ] as [number, number][],
+        distanceKm: haversineKm(
+          compareA.lastLocation.latitude, compareA.lastLocation.longitude,
+          compareB.lastLocation.latitude, compareB.lastLocation.longitude
+        ),
+      }
+    : null;
 
   // Customer icon (memoized)
   const custIcon = useMemo(() => createCustomerIcon(), []);
@@ -202,11 +236,12 @@ export function LiveTrackingMap({
         {salesmen.map((item) => {
           if (!item.lastLocation) return null;
           const isSelected = item.salesman.id === selectedSalesmanId;
+          const isComparing = item.salesman.id === compareAId || item.salesman.id === compareBId;
           return (
             <Marker
               key={item.salesman.id}
               position={[item.lastLocation.latitude, item.lastLocation.longitude]}
-              icon={createSalesmanIcon(item.salesman.name, item.isOnline, isSelected)}
+              icon={createSalesmanIcon(item.salesman.name, item.isOnline, isSelected, isComparing)}
               eventHandlers={{
                 click: () => onSelectSalesman?.(item.salesman.id),
               }}
@@ -287,6 +322,18 @@ export function LiveTrackingMap({
             positions={routeLatLngs}
             pathOptions={{ color: '#3b82f6', weight: 3, opacity: 0.7 }}
           />
+        )}
+
+        {/* Distance line between two compared salesmen */}
+        {compareLine && (
+          <Polyline
+            positions={compareLine.positions}
+            pathOptions={{ color: '#ec4899', weight: 3, opacity: 0.85, dashArray: '8 8' }}
+          >
+            <Tooltip permanent direction="center" className="compare-distance-tooltip">
+              {compareLine.distanceKm.toFixed(2)} km apart
+            </Tooltip>
+          </Polyline>
         )}
 
         {/* Visit markers along the route */}

@@ -63,6 +63,21 @@ export const authApi = {
     }),
 
   getCurrentUser: () => apiRequest<any>('/auth/me'),
+
+  forgotPassword: (email: string) =>
+    apiRequest<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim() }),
+    }),
+
+  verifySetPasswordToken: (token: string) =>
+    apiRequest<{ valid: boolean; email?: string; name?: string; error?: string }>(`/auth/set-password/${token}`),
+
+  setPassword: (token: string, newPassword: string) =>
+    apiRequest<{ message: string }>('/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    }),
 };
 
 // ==================== USERS API ====================
@@ -84,6 +99,45 @@ export const usersApi = {
 
   delete: (id: string) =>
     apiRequest<void>(`/users/${id}`, { method: 'DELETE' }),
+};
+
+// ==================== ROLES API ====================
+
+export const rolesApi = {
+  getAll: () => apiRequest<any[]>('/roles'),
+
+  getUnassignedUsers: () => apiRequest<any[]>('/roles/unassigned-users'),
+
+  create: (roleData: {
+    name: string;
+    description?: string;
+    dataScope: 'all' | 'own_branch' | 'own_records';
+    permissions: Record<string, Record<'view' | 'create' | 'edit' | 'delete', boolean>>;
+  }) =>
+    apiRequest<any>('/roles', {
+      method: 'POST',
+      body: JSON.stringify(roleData),
+    }),
+
+  update: (id: string, roleData: {
+    name: string;
+    description?: string;
+    dataScope: 'all' | 'own_branch' | 'own_records';
+    permissions: Record<string, Record<'view' | 'create' | 'edit' | 'delete', boolean>>;
+  }) =>
+    apiRequest<any>(`/roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(roleData),
+    }),
+
+  delete: (id: string) =>
+    apiRequest<void>(`/roles/${id}`, { method: 'DELETE' }),
+
+  assignUsers: (id: string, userIds: string[]) =>
+    apiRequest<{ assigned: number }>(`/roles/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ userIds }),
+    }),
 };
 
 // ==================== BRANCHES API ====================
@@ -617,6 +671,13 @@ export const suppliersApi = {
 export const purchasesApi = {
   getAll: () => apiRequest<any[]>('/purchases'),
   create: (data: any) => apiRequest<any>('/purchases', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// Payment Out — payments made to suppliers, the mirror of paymentsApi (Payment Received)
+export const supplierPaymentsApi = {
+  getAll: (supplierId?: string) =>
+    apiRequest<any[]>(`/supplier-payments${supplierId ? `?supplierId=${supplierId}` : ''}`),
+  create: (data: any) => apiRequest<any>('/supplier-payments', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // Feature 10: Daily Collection

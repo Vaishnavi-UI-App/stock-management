@@ -9,7 +9,7 @@ import '../stock/Stock.css';
 
 export function LeaveManagement() {
   const { currentUser } = useStore();
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   const [leaves, setLeaves] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');

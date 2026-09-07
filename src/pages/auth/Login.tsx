@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle, Mail, Lock, ArrowRight } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import './Login.css';
@@ -94,7 +94,12 @@ export function Login() {
             </div>
 
             <div className="login-field">
-              <label>Password</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <label>Password</label>
+                <Link to="/forgot-password" style={{ fontSize: '13px', color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>
+                  Forgot password?
+                </Link>
+              </div>
               <div className="login-input-wrapper">
                 <Lock size={18} className="login-input-icon" />
                 <input

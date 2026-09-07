@@ -8,7 +8,7 @@ type CardFilter = 'all' | 'today_present' | 'month_present' | 'half_day' | 'abse
 
 export function AttendanceManagement() {
   const { users, fetchUsers, currentUser } = useStore();
-  const isBranchManager = currentUser?.role === 'branch_manager';
+  const isBranchManager = currentUser?.dataScope === 'own_branch';
   // For branch_manager, only show their branch employees in filters
   const filteredUsers = isBranchManager && currentUser?.branchId
     ? users.filter(u => u.branchId === currentUser.branchId)
@@ -259,7 +259,7 @@ export function AttendanceManagement() {
     if (!printWindow || !slipData) return;
     const { emp, presentDays, halfDays, lateDays, totalWorkingDays, totalHours, lopDays, daysInMonth: slipDaysInMonth, customName, customDesignation } = slipData;
     const name = emp?.name || customName || 'N/A';
-    const designation = emp?.designation || customDesignation || (emp?.role === 'salesman' ? 'Salesman' : emp?.role === 'branch_manager' ? 'Branch Manager' : emp?.role === 'account_manager' ? 'Account Manager' : emp?.role === 'stock_manager' ? 'Stock Manager' : 'N/A');
+    const designation = emp?.designation || customDesignation || emp?.roleName || 'N/A';
     const panNumber = emp?.panCard || 'N/A';
     const empLocation = emp?.location || orgData?.city || 'Pune';
     const daysInMonth = slipDaysInMonth || new Date(slipYear, slipMonth, 0).getDate();

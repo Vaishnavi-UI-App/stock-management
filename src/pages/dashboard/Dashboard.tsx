@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Package,
-  Building2,
   Users,
   ShoppingCart,
   TrendingUp,
@@ -43,7 +42,10 @@ export function Dashboard() {
   } = useStore();
   const { t } = useLanguage();
 
-  const role = currentUser?.role;
+  // Dashboard content is keyed off dataScope, not the legacy role string:
+  // 'all' (old stock_manager/account_manager tier) gets the full admin
+  // dashboard, 'own_branch' the branch view, 'own_records' the salesman view.
+  const dataScope = currentUser?.dataScope;
   const greeting = useMemo(() => getGreeting(), []);
 
   // Payment summary state for admin
@@ -56,16 +58,16 @@ export function Dashboard() {
   });
 
   useEffect(() => {
-    if (role === 'stock_manager' || role === 'account_manager') {
+    if (dataScope === 'all') {
       paymentsApi.getSummary()
         .then(data => setPaymentSummary(data))
         .catch(err => console.error('Failed to fetch payment summary:', err));
     }
-  }, [role]);
+  }, [dataScope]);
 
-  // Calculate stats based on role
+  // Calculate stats based on data scope
   const getStats = () => {
-    if (role === 'stock_manager') {
+    if (dataScope === 'all') {
       const totalCompanyStock = companyStock.reduce((sum, cs) => sum + cs.quantity, 0);
       const totalSalesAmount = sales.reduce((sum, s) => sum + s.finalAmount, 0);
       const thisMonthSales = sales.filter(s => {
@@ -91,13 +93,6 @@ export function Dashboard() {
           bgColor: 'rgba(139, 92, 246, 0.1)',
         },
         {
-          label: 'Total Branches',
-          value: branches.length,
-          icon: Building2,
-          color: '#22c55e',
-          bgColor: 'rgba(34, 197, 94, 0.1)',
-        },
-        {
           label: 'Total Users',
           value: users.length,
           icon: Users,
@@ -121,45 +116,11 @@ export function Dashboard() {
       ];
     }
 
-    if (role === 'account_manager') {
-      const totalSalesAmount = sales.reduce((sum, s) => sum + s.finalAmount, 0);
-      const thisMonthSales = sales.filter(s => {
-        const saleDate = new Date(s.saleDate);
-        const now = new Date();
-        return saleDate.getMonth() === now.getMonth() && saleDate.getFullYear() === now.getFullYear();
-      });
-      const thisMonthAmount = thisMonthSales.reduce((sum, s) => sum + s.finalAmount, 0);
-
-      return [
-        {
-          label: 'Total Sales',
-          value: sales.length,
-          icon: ShoppingCart,
-          color: '#2563eb',
-          bgColor: 'rgba(37, 99, 235, 0.1)',
-        },
-        {
-          label: 'Revenue',
-          value: `₹${totalSalesAmount.toLocaleString()}`,
-          icon: IndianRupee,
-          color: '#06b6d4',
-          bgColor: 'rgba(6, 182, 212, 0.1)',
-        },
-        {
-          label: 'This Month',
-          value: `₹${thisMonthAmount.toLocaleString()}`,
-          icon: TrendingUp,
-          color: '#ec4899',
-          bgColor: 'rgba(236, 72, 153, 0.1)',
-        },
-      ];
-    }
-
-    if (role === 'branch_manager') {
+    if (dataScope === 'own_branch') {
       const branchId = currentUser?.branchId;
       const myBranchStock = branchStock.filter(bs => bs.branchId === branchId);
       const totalStock = myBranchStock.reduce((sum, bs) => sum + bs.quantity, 0);
-      const branchSalesmen = users.filter(u => u.role === 'salesman' && u.branchId === branchId);
+      const branchSalesmen = users.filter(u => u.dataScope === 'own_records' && u.branchId === branchId);
 
       return [
         {
@@ -186,7 +147,7 @@ export function Dashboard() {
       ];
     }
 
-    if (role === 'salesman') {
+    if (dataScope === 'own_records') {
       const myStock = salesmanStock.filter(ss => ss.salesmanId === currentUser?.id);
       const totalItems = myStock.reduce((sum, ss) => sum + ss.quantity, 0);
       const mySales = sales.filter(s => s.salesmanId === currentUser?.id);
@@ -236,9 +197,9 @@ export function Dashboard() {
   const getRecentSales = () => {
     let filteredSales = [...sales];
 
-    if (role === 'branch_manager') {
+    if (dataScope === 'own_branch') {
       filteredSales = sales.filter(s => s.branchId === currentUser?.branchId);
-    } else if (role === 'salesman') {
+    } else if (dataScope === 'own_records') {
       filteredSales = sales.filter(s => s.salesmanId === currentUser?.id);
     }
 
@@ -248,7 +209,7 @@ export function Dashboard() {
   };
 
   const getLowStockItems = () => {
-    if (role === 'stock_manager') {
+    if (dataScope === 'all') {
       return companyStock
         .filter(cs => cs.quantity < 50)
         .map(cs => ({
@@ -259,7 +220,7 @@ export function Dashboard() {
         .filter(item => item.product);
     }
 
-    if (role === 'branch_manager') {
+    if (dataScope === 'own_branch') {
       const branchId = currentUser?.branchId;
       return branchStock
         .filter(bs => bs.branchId === branchId && bs.quantity < 10)
@@ -335,7 +296,7 @@ export function Dashboard() {
           )}
         </div>
 
-        {(role === 'stock_manager' || role === 'branch_manager') && (
+        {(dataScope === 'all' || dataScope === 'own_branch') && (
           <div className="card low-stock">
             <div className="card-header">
               <h3>Low Stock Alert</h3>
@@ -363,7 +324,7 @@ export function Dashboard() {
           </div>
         )}
 
-        {role === 'salesman' && (
+        {dataScope === 'own_records' && (
           <div className="card my-stock">
             <div className="card-header">
               <h3>{t.myCurrentStock}</h3>
@@ -397,7 +358,7 @@ export function Dashboard() {
         )}
       </div>
 
-      {(role === 'stock_manager' || role === 'account_manager') && (
+      {dataScope === 'all' && (
         <>
         {/* Payment Summary Section */}
         <div className="stats-grid" style={{ marginTop: '24px' }}>
@@ -466,7 +427,7 @@ export function Dashboard() {
               <tbody>
                 {branches.map((branch) => {
                   const manager = getUserById(branch.managerId || '');
-                  const branchSalesmen = users.filter(u => u.role === 'salesman' && u.branchId === branch.id);
+                  const branchSalesmen = users.filter(u => u.dataScope === 'own_records' && u.branchId === branch.id);
                   const branchSalesData = sales.filter(s => s.branchId === branch.id);
                   const totalSales = branchSalesData.reduce((sum, s) => sum + s.finalAmount, 0);
                   const branchStockData = branchStock.filter(bs => bs.branchId === branch.id);

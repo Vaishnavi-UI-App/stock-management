@@ -6,7 +6,7 @@ import '../stock/Stock.css';
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 export function Profile() {
-  const { currentUser, updateUser, getBranchById } = useStore();
+  const { currentUser, updateUser } = useStore();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -213,17 +213,6 @@ export function Profile() {
     }
   };
 
-  const getRoleLabel = (role: string) => {
-    switch (role) {
-      case 'stock_manager': return 'Stock Manager';
-      case 'branch_manager': return 'Branch Manager';
-      case 'salesman': return 'Salesman';
-      default: return role;
-    }
-  };
-
-  const branch = currentUser?.branchId ? getBranchById(currentUser.branchId) : null;
-
   if (!currentUser) {
     return <div className="stock-page">Loading...</div>;
   }
@@ -260,97 +249,74 @@ export function Profile() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px' }}>
-        {/* Profile Card */}
-        <div className="card" style={{ padding: '24px', textAlign: 'center' }}>
-          {/* Clickable Profile Photo */}
-          <div
-            style={{
-              position: 'relative',
-              width: '120px',
-              height: '120px',
-              margin: '0 auto 16px',
-              cursor: isEditing ? 'pointer' : 'default'
-            }}
-            onClick={() => isEditing && profilePhotoRef.current?.click()}
-          >
+      {/* Profile Form */}
+      <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', paddingBottom: '20px', borderBottom: '1px solid #e5e7eb' }}>
             <div
-              style={{
-                width: '120px',
-                height: '120px',
-                borderRadius: '50%',
-                background: formData.profilePhoto
-                  ? `url(${formData.profilePhoto}) center/cover`
-                  : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '48px',
-                color: 'white',
-                fontWeight: '600',
-                border: isEditing ? '3px dashed #6366f1' : 'none'
-              }}
+              style={{ position: 'relative', width: '64px', height: '64px', flexShrink: 0, cursor: isEditing ? 'pointer' : 'default' }}
+              onClick={() => isEditing && profilePhotoRef.current?.click()}
             >
-              {!formData.profilePhoto && currentUser.name.charAt(0).toUpperCase()}
-            </div>
-            {isEditing && (
               <div
                 style={{
-                  position: 'absolute',
-                  bottom: '0',
-                  right: '0',
-                  background: '#6366f1',
+                  width: '64px',
+                  height: '64px',
                   borderRadius: '50%',
-                  padding: '8px',
+                  background: formData.profilePhoto
+                    ? `url(${formData.profilePhoto}) center/cover`
+                    : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '24px',
                   color: 'white',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                  fontWeight: '600',
+                  border: isEditing ? '2px dashed #6366f1' : 'none'
                 }}
               >
-                <Camera size={16} />
+                {!formData.profilePhoto && currentUser.name.charAt(0).toUpperCase()}
               </div>
-            )}
-            <input
-              ref={profilePhotoRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={(e) => handleFileUpload(e, 'profilePhoto')}
-            />
+              {isEditing && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '-2px',
+                    right: '-2px',
+                    background: '#6366f1',
+                    borderRadius: '50%',
+                    padding: '4px',
+                    color: 'white',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                  }}
+                >
+                  <Camera size={12} />
+                </div>
+              )}
+              <input
+                ref={profilePhotoRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => handleFileUpload(e, 'profilePhoto')}
+              />
+            </div>
+            <div>
+              <div style={{ fontWeight: '600', fontSize: '16px', color: '#1e293b' }}>{currentUser.name}</div>
+              <span
+                style={{
+                  display: 'inline-block',
+                  marginTop: '4px',
+                  padding: '2px 10px',
+                  background: '#e0e7ff',
+                  color: '#4338ca',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}
+              >
+                {currentUser.roleName || 'N/A'}
+              </span>
+            </div>
           </div>
-
-          <h2 style={{ margin: '0 0 4px', fontSize: '20px' }}>{currentUser.name}</h2>
-          {currentUser.employeeCode && (
-            <p style={{ margin: '0 0 8px', color: '#6366f1', fontWeight: '500' }}>
-              {currentUser.employeeCode}
-            </p>
-          )}
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '4px 12px',
-              background: '#e0e7ff',
-              color: '#4338ca',
-              borderRadius: '20px',
-              fontSize: '13px',
-              fontWeight: '500'
-            }}
-          >
-            {getRoleLabel(currentUser.role)}
-          </span>
-          {branch && (
-            <p style={{ margin: '12px 0 0', color: '#64748b', fontSize: '14px' }}>
-              {branch.name}
-            </p>
-          )}
-          {currentUser.monthlySalary && (
-            <p style={{ margin: '8px 0 0', color: '#059669', fontWeight: '600' }}>
-              ₹{currentUser.monthlySalary.toLocaleString()}/month
-            </p>
-          )}
-        </div>
-
-        {/* Profile Form */}
-        <div className="card" style={{ padding: '24px' }}>
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">
@@ -702,7 +668,7 @@ export function Profile() {
             </div>
 
             {/* Salary Breakdown & Allowances Section - Admin Only */}
-            {currentUser.role === 'stock_manager' && <div style={{ marginTop: '24px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+            {currentUser.dataScope === 'all' && <div style={{ marginTop: '24px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
               <h3 style={{ margin: '0 0 16px', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px', color: '#166534' }}>
                 Salary Breakdown & Allowances
               </h3>
@@ -825,7 +791,6 @@ export function Profile() {
             )}
           </form>
         </div>
-      </div>
 
       {/* Document Preview Modal */}
       {previewDoc && (

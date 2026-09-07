@@ -1,5 +1,31 @@
 // User roles
+// NOTE: legacy hardcoded role enum. Kept only for old display-only code paths
+// that haven't been migrated yet. Do not use this for new gating logic —
+// roles are now dynamic (see `Role` below) and gating goes through
+// `user.permissions` / `user.dataScope` instead.
 export type UserRole = 'stock_manager' | 'account_manager' | 'branch_manager' | 'salesman';
+
+// Permission action types for the dynamic RBAC system
+export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
+
+// A role's permissions: module key -> which actions are allowed
+export type PermissionsMap = Record<string, Record<PermissionAction, boolean>>;
+
+// Data visibility scope for a role
+export type DataScope = 'all' | 'own_branch' | 'own_records';
+
+// Dynamic, admin-defined role
+export interface Role {
+  id: string;
+  name: string;
+  description?: string | null;
+  dataScope: DataScope;
+  permissions: PermissionsMap;
+  isSystem: boolean;
+  userCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // User interface
 export interface User {
@@ -7,7 +33,15 @@ export interface User {
   name: string;
   email: string;
   password: string;
-  role: UserRole;
+  // Legacy/transitional field — the old hardcoded role enum string. Still
+  // returned by the API for now but deprecated: prefer roleId/roleName and
+  // permissions/dataScope for any gating logic.
+  role?: string | null;
+  // Dynamic RBAC fields
+  roleId?: string | null;
+  roleName?: string | null;
+  permissions?: PermissionsMap;
+  dataScope?: DataScope;
   branchId?: string; // For branch managers and salesmen
   phone: string;
   // Additional employee fields
