@@ -40,7 +40,11 @@ async function apiRequest<T>(
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     // Session is no longer valid on the server — force a clean re-login so the
     // user gets a fresh token instead of repeatedly hitting "Invalid token".
-    if (response.status === 401) {
+    // Only applies when we actually sent a token: a 401 with no token attached
+    // is just a rejected login attempt (wrong password), not an expired
+    // session — treating it as one force-reloaded the page out from under the
+    // login form before the "Invalid credentials" error could ever be shown.
+    if (response.status === 401 && token) {
       handleExpiredSession();
       throw new Error(error.error || 'Your session has expired. Please log in again.');
     }
