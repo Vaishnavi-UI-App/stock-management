@@ -34,7 +34,7 @@ function sanitizeUser(user) {
     roleId: user.roleId ?? null,
     roleName: roleRef?.name ?? null,
     permissions: roleRef?.permissions ?? {},
-    dataScope: roleRef?.dataScope ?? 'own_records',
+    dataScope: roleRef?.dataScope ?? LEGACY_DATA_SCOPE_BY_ROLE[user.role] ?? 'own_records',
     // Falls back to the legacy `role` enum for users not yet migrated to a
     // Role (see scripts/backfill-roles.js) — same fallback pattern used
     // server-side by whereFieldStaff().
@@ -145,8 +145,23 @@ function canAccessOwnOrPermitted(user, ownerUserId, module, action) {
 //   user's managed branch and filter owned records to that branch's users.
 // - dataScope 'own_records' (default, incl. users with no role at all):
 //   filter to only the user's own records via ownerField.
+// Legacy `role` enum -> implied Data Scope, for users not yet migrated to a
+// Role (roleId = null — see scripts/backfill-roles.js). Pre-RBAC,
+// account_manager was treated the same as stock_manager for company-wide
+// access (see e.g. the old `isAdmin = ['stock_manager','account_manager']`
+// checks), and branch_manager was scoped to their own branch — collapsing
+// every unmigrated user to 'own_records' regardless of their actual legacy
+// role wrongly restricted managers to seeing only records they personally
+// created.
+const LEGACY_DATA_SCOPE_BY_ROLE = {
+  stock_manager: 'all',
+  account_manager: 'all',
+  branch_manager: 'own_branch',
+  salesman: 'own_records',
+};
+
 async function applyDataScope(where, user, { branchField, ownerField, resolveBranchViaMembership } = {}) {
-  const scope = user.roleRef?.dataScope ?? 'own_records';
+  const scope = user.roleRef?.dataScope ?? LEGACY_DATA_SCOPE_BY_ROLE[user.role] ?? 'own_records';
   if (scope === 'all') return where;
   // own_records: prefer the most precise restriction available (the user's
   // own records). Only fall back to a branch-level filter if no ownerField
