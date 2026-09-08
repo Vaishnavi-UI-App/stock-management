@@ -28,11 +28,12 @@ interface RoleFormData {
   name: string;
   description: string;
   dataScope: DataScope;
+  isFieldStaff: boolean;
   permissions: PermissionsMap;
 }
 
 function defaultFormData(): RoleFormData {
-  return { name: '', description: '', dataScope: 'own_records', permissions: emptyPermissions() };
+  return { name: '', description: '', dataScope: 'own_records', isFieldStaff: false, permissions: emptyPermissions() };
 }
 
 export function Roles() {
@@ -88,6 +89,7 @@ export function Roles() {
         name: role.name,
         description: role.description || '',
         dataScope: role.dataScope,
+        isFieldStaff: role.isFieldStaff,
         permissions,
       });
     } else {
@@ -147,6 +149,7 @@ export function Roles() {
         name: formData.name,
         description: formData.description || undefined,
         dataScope: formData.dataScope,
+        isFieldStaff: formData.isFieldStaff,
         permissions: formData.permissions,
       };
       if (editingRole) {
@@ -328,6 +331,9 @@ export function Roles() {
                 </td>
                 <td>
                   <span className="badge badge-info">{DATA_SCOPE_LABELS[role.dataScope]}</span>
+                  {role.isFieldStaff && (
+                    <span className="badge badge-info" style={{ marginLeft: '6px' }}>Field staff</span>
+                  )}
                 </td>
                 <td>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -413,10 +419,20 @@ export function Roles() {
                       onChange={(e) => setFormData({ ...formData, dataScope: e.target.value as DataScope })}
                     >
                       <option value="all">All data</option>
-                      <option value="own_branch">Own branch only</option>
                       <option value="own_records">Own records only</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.isFieldStaff}
+                      onChange={(e) => setFormData({ ...formData, isFieldStaff: e.target.checked })}
+                    />
+                    Field staff (tracked on Route Tracking, can use "My Route")
+                  </label>
                 </div>
 
                 <div className="form-group">

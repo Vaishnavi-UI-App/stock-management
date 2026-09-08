@@ -20,6 +20,7 @@ export interface Role {
   name: string;
   description?: string | null;
   dataScope: DataScope;
+  isFieldStaff: boolean;
   permissions: PermissionsMap;
   isSystem: boolean;
   userCount?: number;
@@ -42,6 +43,7 @@ export interface User {
   roleName?: string | null;
   permissions?: PermissionsMap;
   dataScope?: DataScope;
+  isFieldStaff?: boolean;
   branchId?: string; // For branch managers and salesmen
   phone: string;
   // Additional employee fields

@@ -166,6 +166,14 @@ model Role {
   dataScope   DataScope @default(own_records)
   permissions Json
   isSystem    Boolean   @default(false)
+  // Marks this role as field staff (salesmen): tracked on the live Route
+  // Tracking map, counted in Salesman Performance, and — unlike module
+  // permissions, which an Administrator role grants in full and would
+  // otherwise wrongly qualify admins too — this is the one dedicated signal
+  // for "does this role need self-tracking?" (also gates access to the "My
+  // Route" self check-in/tracking page). Independent of Data Scope: a field
+  // role can still be scoped to 'all' if the business wants that.
+  isFieldStaff Boolean  @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

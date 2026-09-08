@@ -66,6 +66,13 @@ const ALWAYS_VISIBLE_ITEMS: MenuItemDef[] = [
   { path: '/my-orders', icon: Send, label: 'My Orders', module: '' },
 ];
 
+// Visible only for roles marked "Field staff" (Role.isFieldStaff) — self
+// check-in/location tracking, not gated by a module permission since it only
+// ever touches the current user's own data.
+const FIELD_STAFF_ITEMS: MenuItemDef[] = [
+  { path: '/my-route', icon: Navigation, label: 'My Route', module: '' },
+];
+
 // Always the last item in the sidebar, after every permission-gated entry.
 const SETTINGS_ITEM: MenuItemDef = { path: '/settings', icon: SettingsIcon, label: 'Settings', module: '' };
 
@@ -96,7 +103,9 @@ export function Layout({ children }: LayoutProps) {
         : currentUser?.permissions?.[item.module]?.view
     );
 
-    return [...baseItems, ...ALWAYS_VISIBLE_ITEMS, ...permittedItems, SETTINGS_ITEM];
+    const fieldStaffItems = currentUser?.isFieldStaff ? FIELD_STAFF_ITEMS : [];
+
+    return [...baseItems, ...ALWAYS_VISIBLE_ITEMS, ...fieldStaffItems, ...permittedItems, SETTINGS_ITEM];
   };
 
   const menuItems = getMenuItems();

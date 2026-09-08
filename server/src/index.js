@@ -35,6 +35,10 @@ function sanitizeUser(user) {
     roleName: roleRef?.name ?? null,
     permissions: roleRef?.permissions ?? {},
     dataScope: roleRef?.dataScope ?? 'own_records',
+    // Falls back to the legacy `role` enum for users not yet migrated to a
+    // Role (see scripts/backfill-roles.js) — same fallback pattern used
+    // server-side by whereFieldStaff().
+    isFieldStaff: roleRef ? roleRef.isFieldStaff : user.role === 'salesman',
   };
 }
 
@@ -184,6 +188,22 @@ async function whereModulePermission(module, action, legacyRoles = []) {
     OR: [
       { roleId: { in: roleIds } },
       { AND: [{ roleId: null }, { role: { in: legacyRoles } }] },
+    ],
+  };
+}
+
+// Matches users who are field staff (salesmen) — driven by the dedicated
+// Role.isFieldStaff flag, not permissions. A permission-matrix check (like
+// whereModulePermission) breaks for this specifically because an
+// Administrator role grants every permission, including ones a field-staff
+// check would key off of, so admins would wrongly show up as "salesmen" too.
+// Falls back to the legacy `role` enum for users not yet migrated to a Role.
+async function whereFieldStaff() {
+  const roles = await prisma.role.findMany({ where: { isFieldStaff: true }, select: { id: true } });
+  return {
+    OR: [
+      { roleId: { in: roles.map((r) => r.id) } },
+      { AND: [{ roleId: null }, { role: 'salesman' }] },
     ],
   };
 }
@@ -602,7 +622,7 @@ function cleanPermissions(input) {
 
 app.post('/api/roles', authMiddleware, requirePermission('roles', 'create'), async (req, res) => {
   try {
-    const { name, description, dataScope, permissions } = req.body;
+    const { name, description, dataScope, permissions, isFieldStaff } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Role name is required' });
     }
@@ -615,6 +635,7 @@ app.post('/api/roles', authMiddleware, requirePermission('roles', 'create'), asy
         description: description || null,
         dataScope,
         permissions: cleanPermissions(permissions),
+        isFieldStaff: !!isFieldStaff,
       },
     });
     createAuditLog(req.user.id, 'CREATE', 'Role', role.id, null, { name: role.name }, req.ip);
@@ -633,7 +654,7 @@ app.put('/api/roles/:id', authMiddleware, requirePermission('roles', 'edit'), as
     const existing = await prisma.role.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Role not found' });
 
-    const { name, description, dataScope, permissions } = req.body;
+    const { name, description, dataScope, permissions, isFieldStaff } = req.body;
     if (!['all', 'own_branch', 'own_records'].includes(dataScope)) {
       return res.status(400).json({ error: 'Invalid dataScope' });
     }
@@ -655,6 +676,7 @@ app.put('/api/roles/:id', authMiddleware, requirePermission('roles', 'edit'), as
         description: description ?? existing.description,
         dataScope,
         permissions: cleaned,
+        isFieldStaff: isFieldStaff === undefined ? existing.isFieldStaff : !!isFieldStaff,
       },
     });
     createAuditLog(req.user.id, 'UPDATE', 'Role', role.id, existing, role, req.ip);
@@ -3623,7 +3645,7 @@ app.get('/api/performance/salesman', authMiddleware, async (req, res) => {
     const startDate = new Date(y, m - 1, 1);
     const endDate = new Date(y, m, 0);
 
-    const salesmen = await prisma.user.findMany({ where: await whereModulePermission('salesmanStock', 'view', ['salesman']), include: { branch: true } });
+    const salesmen = await prisma.user.findMany({ where: await whereFieldStaff(), include: { branch: true } });
     const performance = [];
 
     for (const sm of salesmen) {
@@ -4277,7 +4299,7 @@ app.get('/api/gps/live-tracking', authMiddleware, requirePermission('routeTracki
   try {
     // Get latest location for each active salesman
     const salesmen = await prisma.user.findMany({
-      where: await whereModulePermission('salesmanStock', 'view', ['salesman']),
+      where: await whereFieldStaff(),
       select: { id: true, name: true, phone: true, employeeCode: true, branch: true }
     });
 

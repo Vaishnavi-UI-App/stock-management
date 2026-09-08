@@ -253,10 +253,15 @@ function App() {
         <Route path="/branch-stock-alerts" element={<ProtectedRoute requiredPermission={{ module: 'stockAlerts', action: 'view' }}><StockAlerts /></ProtectedRoute>} />
 
         {/* Salesman Routes */}
+        {/* Self-service — operates only on the logged-in user's own location/
+            check-ins, so any authenticated user can reach it. It used to
+            require the 'routeTracking' permission (the ADMIN dashboard's
+            permission for viewing every salesman's location), which blocked
+            every salesman from ever reaching their own tracking page. */}
         <Route
           path="/my-route"
           element={
-            <ProtectedRoute requiredPermission={{ module: 'routeTracking', action: 'view' }}>
+            <ProtectedRoute>
               <MyRoute />
             </ProtectedRoute>
           }
