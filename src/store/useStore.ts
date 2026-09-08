@@ -34,6 +34,12 @@ interface AppState {
   // Auth actions
   login: (email: string, password: string) => Promise<User | null>;
   logout: () => void;
+  // Re-fetches the logged-in user's own record from the server. Auth state
+  // is persisted client-side from whatever the user object looked like at
+  // login time, so without this a role/permission change an admin makes
+  // (e.g. a new Role.isFieldStaff flag) never reaches an already-logged-in
+  // browser until that person explicitly logs out and back in.
+  refreshCurrentUser: () => Promise<void>;
 
   // Data fetching
   fetchUsers: () => Promise<void>;
@@ -150,6 +156,17 @@ export const useStore = create<AppState>()(
           pendingSales: [],
           stockTransfers: []
         });
+      },
+
+      refreshCurrentUser: async () => {
+        try {
+          const user = await authApi.getCurrentUser();
+          set({ currentUser: user });
+        } catch {
+          // A 401 here already triggers apiRequest's own session-expiry
+          // handling (clears storage, redirects to /login) — nothing extra
+          // to do for other transient failures, just keep the cached user.
+        }
       },
 
       // Data fetching

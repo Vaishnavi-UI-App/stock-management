@@ -76,14 +76,19 @@ function ProtectedRoute({
 }
 
 function App() {
-  const { isAuthenticated, fetchAllData } = useStore();
+  const { isAuthenticated, fetchAllData, refreshCurrentUser } = useStore();
 
-  // Re-fetch all data when the app loads and user is already authenticated
+  // Re-fetch the user's own record and all data when the app loads and the
+  // user is already authenticated — refreshCurrentUser picks up any
+  // role/permission change an admin made since this session's last login
+  // (persisted auth state would otherwise stay stale until an explicit
+  // logout/login).
   useEffect(() => {
     if (isAuthenticated) {
+      refreshCurrentUser();
       fetchAllData();
     }
-  }, [isAuthenticated, fetchAllData]);
+  }, [isAuthenticated, fetchAllData, refreshCurrentUser]);
 
   return (
     <BrowserRouter>
