@@ -1,38 +1,24 @@
-const CACHE_NAME = 'dynamiccrop-v1';
-const URLS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/logo.png'
-];
+// v2: the old fetch handler cached every GET response under one shared
+// CACHE_NAME and fell back to `caches.match()` on ANY network hiccup — a
+// cache miss there resolves to `undefined`, which respondWith() can't turn
+// into a Response, so a transient network blip (common on mobile) showed as
+// a blank/looping "Loading…" page instead of just retrying. nginx already
+// sets the right cache headers (immutable hashed assets, no-cache
+// index.html), so this SW no longer duplicates that — it exists only so the
+// app stays installable as a PWA.
+const CACHE_NAME = 'dynamiccrop-v2';
 
-// Install - cache essential files
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(URLS_TO_CACHE))
-  );
+// Activate - drop every cache left by older versions of this worker.
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-// Activate - clean old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
   );
   self.clients.claim();
 });
 
-// Fetch - network first, fallback to cache
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
-});
+// No fetch handler — requests pass straight through to the network, exactly
+// as they would with no service worker installed.
