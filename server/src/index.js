@@ -167,6 +167,27 @@ async function applyDataScope(where, user, { branchField, ownerField, resolveBra
   return where;
 }
 
+// Matches users belonging to a given dataScope for admin-facing aggregate
+// queries (e.g. "list every salesman"), falling back to the legacy `role`
+// enum for the many users the RBAC backfill deliberately left with roleId =
+// null (see scripts/backfill-roles.js) — without this fallback these queries
+// silently return nothing for anyone not yet manually reassigned a Role.
+// Remove once every user has been migrated to a Role.
+const LEGACY_ROLE_BY_DATA_SCOPE = {
+  all: 'stock_manager',
+  own_records: 'salesman',
+  own_branch: 'branch_manager',
+};
+function whereDataScope(dataScope, negate = false) {
+  const legacyRole = LEGACY_ROLE_BY_DATA_SCOPE[dataScope];
+  return {
+    OR: [
+      { roleRef: { dataScope: negate ? { not: dataScope } : dataScope } },
+      { AND: [{ roleId: null }, { role: negate ? { not: legacyRole } : legacyRole }] },
+    ],
+  };
+}
+
 // ==================== AUTH ROUTES ====================
 
 // Login
@@ -3531,7 +3552,7 @@ app.put('/api/products/:id/reorder-point', authMiddleware, requirePermission('pr
 app.post('/api/payroll/generate', authMiddleware, requirePermission('payroll', 'view'), async (req, res) => {
   try {
     const { month, year } = req.body;
-    const employees = await prisma.user.findMany({ where: { roleRef: { dataScope: { not: 'all' } } } });
+    const employees = await prisma.user.findMany({ where: whereDataScope('all', true) });
     const daysInMonth = new Date(year, month, 0).getDate();
     const payroll = [];
 
@@ -3602,7 +3623,7 @@ app.get('/api/performance/salesman', authMiddleware, async (req, res) => {
     const startDate = new Date(y, m - 1, 1);
     const endDate = new Date(y, m, 0);
 
-    const salesmen = await prisma.user.findMany({ where: { roleRef: { dataScope: 'own_records' } }, include: { branch: true } });
+    const salesmen = await prisma.user.findMany({ where: whereDataScope('own_records'), include: { branch: true } });
     const performance = [];
 
     for (const sm of salesmen) {
@@ -4016,7 +4037,7 @@ app.post('/api/stock-update-requests', authMiddleware, requirePermission('stockR
       include: { product: true, branch: true }
     });
     // Notify all admins
-    const admins = await prisma.user.findMany({ where: { roleRef: { dataScope: 'all' } } });
+    const admins = await prisma.user.findMany({ where: whereDataScope('all') });
     for (const admin of admins) {
       await prisma.notification.create({
         data: {
@@ -4256,7 +4277,7 @@ app.get('/api/gps/live-tracking', authMiddleware, requirePermission('routeTracki
   try {
     // Get latest location for each active salesman
     const salesmen = await prisma.user.findMany({
-      where: { roleRef: { dataScope: 'own_records' } },
+      where: whereDataScope('own_records'),
       select: { id: true, name: true, phone: true, employeeCode: true, branch: true }
     });
 
