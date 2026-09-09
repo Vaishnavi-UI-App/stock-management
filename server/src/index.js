@@ -4312,9 +4312,9 @@ app.get('/api/gps/history/:userId', authMiddleware, async (req, res) => {
 // Get all salesmen's current locations (Admin dashboard)
 app.get('/api/gps/live-tracking', authMiddleware, requirePermission('routeTracking', 'view'), async (req, res) => {
   try {
-    // Get latest location for each active salesman
+    // Route Tracking shows everyone, not just field staff — an admin or branch
+    // manager who granted location access (prompted at login) should show up too.
     const salesmen = await prisma.user.findMany({
-      where: await whereFieldStaff(),
       select: { id: true, name: true, phone: true, employeeCode: true, branch: true }
     });
 

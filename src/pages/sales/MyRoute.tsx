@@ -23,7 +23,11 @@ export function MyRoute() {
   const { currentUser } = useStore();
   const { t } = useLanguage();
   const [isTracking, setIsTracking] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number; address?: string } | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number; address?: string; accuracy?: number } | null>(null);
+
+  // A fix worse than this is unreliable enough (WiFi/cell-tower positioning
+  // instead of GPS) that it's worth calling out rather than showing it as fact.
+  const LOW_ACCURACY_THRESHOLD_M = 150;
   const [todayVisits, setTodayVisits] = useState<CustomerVisit[]>([]);
   const [todaySummary, setTodaySummary] = useState<DailyRouteSummary | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -122,9 +126,13 @@ export function MyRoute() {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const { latitude, longitude } = position.coords;
-        setCurrentLocation({ lat: latitude, lng: longitude });
-        setLocationError(null);
+        const { latitude, longitude, accuracy } = position.coords;
+        setCurrentLocation({ lat: latitude, lng: longitude, accuracy });
+        setLocationError(
+          accuracy > LOW_ACCURACY_THRESHOLD_M
+            ? `Low GPS accuracy (±${Math.round(accuracy)}m) — this location may be off. Move outdoors or wait for a better signal.`
+            : null
+        );
 
         // Try to get address using reverse geocoding
         try {
@@ -162,7 +170,7 @@ export function MyRoute() {
     watchId.current = navigator.geolocation.watchPosition(
       async (position) => {
         const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
-        setCurrentLocation({ lat: latitude, lng: longitude });
+        setCurrentLocation(prev => ({ lat: latitude, lng: longitude, accuracy, address: prev?.address }));
 
         // Track local distance
         if (previousPosition.current) {
@@ -443,6 +451,11 @@ export function MyRoute() {
                 <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
                   <MapPin size={12} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
                   {currentLocation.address?.substring(0, 50) || `${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`}
+                  {currentLocation.accuracy != null && (
+                    <span style={{ color: currentLocation.accuracy > LOW_ACCURACY_THRESHOLD_M ? '#dc2626' : '#94a3b8', marginLeft: '0.375rem' }}>
+                      (±{Math.round(currentLocation.accuracy)}m)
+                    </span>
+                  )}
                 </div>
               )}
             </div>

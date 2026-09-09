@@ -2,7 +2,25 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle, Mail, Lock, ArrowRight } from 'lucide-react';
 import { useStore } from '../../store/useStore';
+import { gpsApi } from '../../services/api';
 import './Login.css';
+
+// Ask for location access right at login, for every role — not just when a
+// salesman opens My Route. Without an initial ping, users who never visit
+// that page (e.g. an admin) never get a lastLocation and can't show up on
+// Route Tracking. Fire-and-forget: never block or fail the login flow on it.
+function requestLocationAccess() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
+      gpsApi.recordLocation({ latitude, longitude, accuracy, speed: speed ?? undefined, heading: heading ?? undefined, altitude: altitude ?? undefined })
+        .catch(() => {});
+    },
+    () => {},
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -21,6 +39,7 @@ export function Login() {
     try {
       const user = await login(email, password);
       if (user) {
+        requestLocationAccess();
         navigate('/dashboard');
       } else {
         setError('Invalid email or password');

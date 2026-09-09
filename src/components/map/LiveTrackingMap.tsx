@@ -263,6 +263,12 @@ export function LiveTrackingMap({
                       Last seen: {new Date(item.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   )}
+                  {item.lastLocation.accuracy != null && (
+                    <div className="popup-detail" style={item.lastLocation.accuracy > 150 ? { color: '#dc2626', fontWeight: 600 } : undefined}>
+                      Accuracy: ±{Math.round(item.lastLocation.accuracy)}m
+                      {item.lastLocation.accuracy > 150 ? ' (low — pin may be inaccurate)' : ''}
+                    </div>
+                  )}
                   {item.lastLocation.speed != null && item.lastLocation.speed > 0 && (
                     <div className="popup-detail">
                       Speed: {(item.lastLocation.speed * 3.6).toFixed(1)} km/h
