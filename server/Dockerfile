@@ -17,7 +17,9 @@ FROM node:20-bullseye-slim
 WORKDIR /app
 
 # OpenSSL + certificates for Prisma
-RUN apt-get update && apt-get install -y openssl ca-certificates \
+# Check-Valid-Until=false: bullseye is EOL, so debian-security's Release file
+# metadata has stopped being refreshed and apt otherwise refuses it as expired.
+RUN apt-get update -o Acquire::Check-Valid-Until=false && apt-get install -y openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
