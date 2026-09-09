@@ -17,9 +17,15 @@ FROM node:20-bullseye-slim
 WORKDIR /app
 
 # OpenSSL + certificates for Prisma
-# Check-Valid-Until=false: bullseye is EOL, so debian-security's Release file
-# metadata has stopped being refreshed and apt otherwise refuses it as expired.
-RUN apt-get update -o Acquire::Check-Valid-Until=false && apt-get install -y openssl ca-certificates \
+# bullseye is EOL: deb.debian.org's rolling mirror has started 404ing individual
+# package files (e.g. this openssl point-release) even though the Packages index
+# still lists them. Switch to the pinned snapshot.debian.org mirror the base image
+# already ships (commented out) instead, which serves a frozen, complete archive.
+RUN sed -i \
+      -e '/^deb http:\/\/deb\.debian\.org/ s/^/# /' \
+      -e '/^# deb http:\/\/snapshot\.debian\.org/ s/^# //' \
+      /etc/apt/sources.list \
+  && apt-get update -o Acquire::Check-Valid-Until=false && apt-get install -y openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
