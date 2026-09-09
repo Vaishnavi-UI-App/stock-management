@@ -44,6 +44,18 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c;
 }
 
+// How long ago a fix was recorded, so an admin can tell a live pin from a stale
+// one at a glance instead of only the coarse online/offline (15-min) badge.
+function formatAge(timestamp: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -260,7 +272,7 @@ export function LiveTrackingMap({
                   )}
                   {item.lastSeen && (
                     <div className="popup-detail">
-                      Last seen: {new Date(item.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      Fix recorded: {formatAge(item.lastSeen)} ({new Date(item.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
                     </div>
                   )}
                   {item.lastLocation.accuracy != null && (
@@ -269,6 +281,15 @@ export function LiveTrackingMap({
                       {item.lastLocation.accuracy > 150 ? ' (low — pin may be inaccurate)' : ''}
                     </div>
                   )}
+                  <div className="popup-detail">
+                    <a
+                      href={`https://www.google.com/maps?q=${item.lastLocation.latitude},${item.lastLocation.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Verify this exact pin on Google Maps ↗
+                    </a>
+                  </div>
                   {item.lastLocation.speed != null && item.lastLocation.speed > 0 && (
                     <div className="popup-detail">
                       Speed: {(item.lastLocation.speed * 3.6).toFixed(1)} km/h
