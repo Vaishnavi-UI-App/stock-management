@@ -103,6 +103,9 @@ export const usersApi = {
 
   delete: (id: string) =>
     apiRequest<void>(`/users/${id}`, { method: 'DELETE' }),
+
+  reactivate: (id: string) =>
+    apiRequest<any>(`/users/${id}/reactivate`, { method: 'PUT' }),
 };
 
 // ==================== ROLES API ====================

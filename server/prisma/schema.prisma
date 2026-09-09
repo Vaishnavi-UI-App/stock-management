@@ -118,6 +118,10 @@ model User {
   pfDeduction          Float?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  // Soft delete: "deleting" a user deactivates the account (blocks login)
+  // instead of removing the row, so their sales/orders/attendance/audit
+  // history — anything referencing this user — stays intact and reportable.
+  isActive         Boolean  @default(true)
 
   // Relations
   salesmanStocks SalesmanStock[]

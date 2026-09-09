@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Edit2, Trash2, X, Building2, User, Camera, Upload, Eye, FileText, Building, Briefcase, ChevronDown, ChevronUp, MessageCircle, Send } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Building2, User, Camera, Upload, Eye, FileText, Building, Briefcase, ChevronDown, ChevronUp, MessageCircle, Send, RotateCcw } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { rolesApi } from '../../services/api';
 import type { Role } from '../../types';
@@ -8,7 +8,7 @@ import './Stock.css';
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 export function Users() {
-  const { users, branches, addUser, updateUser, deleteUser, getBranchById, currentUser } = useStore();
+  const { users, branches, addUser, updateUser, deleteUser, reactivateUser, getBranchById, currentUser } = useStore();
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [filterRole, setFilterRole] = useState<string>('');
@@ -269,9 +269,13 @@ export function Users() {
       alert('You cannot delete your own account');
       return;
     }
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      deleteUser(id);
+    if (window.confirm('Deactivate this user? They will no longer be able to log in, but their sales/orders/attendance history is kept — you can reactivate them anytime.')) {
+      deleteUser(id).catch((error: any) => alert(error.message || 'Failed to deactivate user'));
     }
+  };
+
+  const handleReactivate = (id: string) => {
+    reactivateUser(id).catch((error: any) => alert(error.message || 'Failed to reactivate user'));
   };
 
   const getRoleBadgeClass = (roleName?: string | null) => {
@@ -353,6 +357,7 @@ export function Users() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {user.isActive === false && <span className="badge badge-danger">Inactive</span>}
                   <span className={`badge ${getRoleBadgeClass(user.roleName)}`}>{getRoleLabel(user.roleName)}</span>
                   {branch && (
                     <span className="badge badge-primary">
@@ -380,9 +385,15 @@ export function Users() {
                   <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); handleOpenModal(user.id); }}>
                     <Edit2 size={14} />
                   </button>
-                  <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); handleDelete(user.id); }} disabled={user.id === currentUser?.id}>
-                    <Trash2 size={14} />
-                  </button>
+                  {user.isActive === false ? (
+                    <button className="btn btn-sm btn-success" title="Reactivate" onClick={(e) => { e.stopPropagation(); handleReactivate(user.id); }}>
+                      <RotateCcw size={14} />
+                    </button>
+                  ) : (
+                    <button className="btn btn-sm btn-danger" title="Deactivate" onClick={(e) => { e.stopPropagation(); handleDelete(user.id); }} disabled={user.id === currentUser?.id}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                   {isExpanded ? <ChevronUp size={18} color="#94a3b8" /> : <ChevronDown size={18} color="#94a3b8" />}
                 </div>
               </div>

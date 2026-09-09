@@ -54,7 +54,10 @@ interface AppState {
   // User actions
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => Promise<void>;
   updateUser: (id: string, data: Partial<User>) => Promise<void>;
+  // "Delete" deactivates the account (blocks login) rather than removing the
+  // row — their sales/orders/attendance/audit history stays intact.
   deleteUser: (id: string) => Promise<void>;
+  reactivateUser: (id: string) => Promise<void>;
 
   // Branch actions
   addBranch: (branch: Omit<Branch, 'id' | 'createdAt'>) => Promise<void>;
@@ -307,8 +310,24 @@ export const useStore = create<AppState>()(
         set({ isLoading: true, error: null });
         try {
           await usersApi.delete(id);
+          // The row still exists (soft delete) — mark it inactive in place
+          // rather than removing it, so it stays visible/reactivatable.
           set(state => ({
-            users: state.users.filter(u => u.id !== id),
+            users: state.users.map(u => u.id === id ? { ...u, isActive: false } : u),
+            isLoading: false
+          }));
+        } catch (error: any) {
+          set({ error: error.message, isLoading: false });
+          throw error;
+        }
+      },
+
+      reactivateUser: async (id) => {
+        set({ isLoading: true, error: null });
+        try {
+          const updated = await usersApi.reactivate(id);
+          set(state => ({
+            users: state.users.map(u => u.id === id ? updated : u),
             isLoading: false
           }));
         } catch (error: any) {

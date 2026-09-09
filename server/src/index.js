@@ -110,6 +110,9 @@ const authMiddleware = async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'User not found' });
     }
+    if (!req.user.isActive) {
+      return res.status(401).json({ error: 'This account has been deactivated' });
+    }
     next();
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
@@ -241,6 +244,10 @@ app.post('/api/auth/login', async (req, res) => {
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ error: 'This account has been deactivated. Contact your administrator.' });
     }
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -577,17 +584,40 @@ app.put('/api/users/:id', authMiddleware, requirePermission('users', 'edit'), as
   }
 });
 
-// Delete user
+// Delete user — soft delete. This account has sales/orders/attendance/audit
+// history hanging off it (a hard delete would fail on the foreign keys, or
+// worse, cascade and wipe that history), so "delete" deactivates it instead:
+// login is blocked, but every record referencing this user stays intact and
+// keeps showing their name in reports exactly as before.
 app.delete('/api/users/:id', authMiddleware, requirePermission('users', 'delete'), async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.user.delete({ where: { id } });
+    const user = await prisma.user.update({ where: { id }, data: { isActive: false } });
 
-    // Audit log
-    createAuditLog(req.user.id, 'DELETE', 'User', id, null, null, req.ip);
+    createAuditLog(req.user.id, 'DEACTIVATE', 'User', id, null, { name: user.name }, req.ip);
 
-    res.json({ message: 'User deleted' });
+    res.json({ message: 'User deactivated' });
   } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reactivate a previously deactivated user
+app.put('/api/users/:id/reactivate', authMiddleware, requirePermission('users', 'delete'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await prisma.user.update({ where: { id }, data: { isActive: true } });
+
+    createAuditLog(req.user.id, 'REACTIVATE', 'User', id, null, { name: user.name }, req.ip);
+
+    res.json(sanitizeUser(user));
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'User not found' });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -809,8 +839,13 @@ app.delete('/api/branches/:id', authMiddleware, requirePermission('branches', 'd
 
 // ==================== PRODUCT ROUTES ====================
 
-// Get all products
-app.get('/api/products', authMiddleware, requirePermission('products', 'view'), async (req, res) => {
+// Get all products — self-service, not gated by the 'products' permission
+// (that guards managing the catalog). Placing an order requires seeing what's
+// available to order, same reasoning as POST /api/orders being ungated: a
+// salesman's role rarely grants 'products' view, which otherwise leaves the
+// New Order product list empty for them with no way to fix it short of
+// handing them full catalog-management rights.
+app.get('/api/products', authMiddleware, async (req, res) => {
   try {
     const products = await prisma.product.findMany({
       orderBy: { createdAt: 'desc' },

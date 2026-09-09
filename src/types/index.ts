@@ -44,6 +44,9 @@ export interface User {
   permissions?: PermissionsMap;
   dataScope?: DataScope;
   isFieldStaff?: boolean;
+  // Soft delete: false means "deleted" — login is blocked but every record
+  // referencing this user (sales, orders, audit log, ...) stays intact.
+  isActive?: boolean;
   branchId?: string; // For branch managers and salesmen
   phone: string;
   // Additional employee fields
