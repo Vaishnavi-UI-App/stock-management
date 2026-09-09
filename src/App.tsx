@@ -5,6 +5,7 @@ import { Layout } from './components/layout/Layout';
 import { Login } from './pages/auth/Login';
 import { ForgotPassword } from './pages/auth/ForgotPassword';
 import { SetPassword } from './pages/auth/SetPassword';
+import { gpsApi } from './services/api';
 
 // Lazily load each page so a user only downloads the code for the pages their
 // role can reach. Helper maps named exports to the default export lazy() wants.
@@ -51,6 +52,47 @@ const StockUpdateRequests = page(() => import('./pages/admin/StockUpdateRequests
 const AllBranchStockView = page(() => import('./pages/sales/AllBranchStockView'), 'AllBranchStockView');
 const Settings = page(() => import('./pages/admin/Settings'), 'Settings');
 
+// Keeps every logged-in user's last-known location fresh, for every role, on
+// every page — mounted once at the app root so it never depends on which
+// page is open or on the salesman-only "Start Tracking" toggle in My Route
+// (a separate, opt-in feature for that person's own route/distance stats).
+// Without this, an account that never opens that page — an admin, say —
+// only ever gets a single fix and their pin on the map goes permanently
+// stale the moment they move.
+function useGlobalLocationTracking(isAuthenticated: boolean) {
+  useEffect(() => {
+    if (!isAuthenticated || !navigator.geolocation) return;
+
+    let lastSentAt = 0;
+    const MIN_INTERVAL_MS = 30000; // don't spam the backend on every GPS tick
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const now = Date.now();
+        if (now - lastSentAt < MIN_INTERVAL_MS) return;
+        lastSentAt = now;
+
+        const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
+        gpsApi.recordLocation({
+          latitude,
+          longitude,
+          accuracy,
+          speed: speed ?? undefined,
+          heading: heading ?? undefined,
+          altitude: altitude ?? undefined,
+        }).catch(() => {});
+      },
+      () => {
+        // Permission denied/unavailable — nothing to do here; the map just
+        // shows this user's last successful fix (or none) until it's granted.
+      },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [isAuthenticated]);
+}
+
 // Protected Route Component
 function ProtectedRoute({
   children,
@@ -89,6 +131,8 @@ function App() {
       fetchAllData();
     }
   }, [isAuthenticated, fetchAllData, refreshCurrentUser]);
+
+  useGlobalLocationTracking(isAuthenticated);
 
   return (
     <BrowserRouter>
