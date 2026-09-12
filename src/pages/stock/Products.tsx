@@ -1,7 +1,13 @@
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Package, Search, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Package, Search, X, Check } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import './Stock.css';
+
+const DEFAULT_CATEGORIES = ['Fertilizer', 'NPK', 'Micro Nutrients', 'Organic', 'Other'];
+const DEFAULT_UNITS = ['1KG', '2.5KG', '5KG', '10KG', '25KG', '500GM', '250GM'];
+
+// Sentinel value for the "+ Add new..." option at the bottom of a select.
+const ADD_NEW = '__add_new__';
 
 export function Products() {
   const { products, addProduct, updateProduct, deleteProduct } = useStore();
@@ -23,10 +29,53 @@ export function Products() {
     expDate: ''
   });
 
-  const categories = ['Fertilizer', 'NPK', 'Micro Nutrients', 'Organic', 'Other'];
-  const units = ['1KG', '2.5KG', '5KG', '10KG', '25KG', '500GM', '250GM'];
+  // Custom categories/packings added inline this session, on top of the
+  // defaults and whatever values already exist on saved products — so a new
+  // one entered here shows up for everyone else too as soon as they reload,
+  // with no separate "manage categories" list to maintain.
+  const [extraCategories, setExtraCategories] = useState<string[]>([]);
+  const [extraUnits, setExtraUnits] = useState<string[]>([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [addingUnit, setAddingUnit] = useState(false);
+  const [newCategoryValue, setNewCategoryValue] = useState('');
+  const [newUnitValue, setNewUnitValue] = useState('');
+
+  const categories = Array.from(new Set([
+    ...DEFAULT_CATEGORIES,
+    ...products.map((p) => p.category).filter(Boolean),
+    ...extraCategories,
+  ]));
+  const units = Array.from(new Set([
+    ...DEFAULT_UNITS,
+    ...products.map((p) => p.unit).filter(Boolean),
+    ...extraUnits,
+  ]));
+
+  const confirmNewCategory = () => {
+    const value = newCategoryValue.trim();
+    if (value) {
+      setExtraCategories((prev) => prev.includes(value) ? prev : [...prev, value]);
+      setFormData((prev) => ({ ...prev, category: value }));
+    }
+    setAddingCategory(false);
+    setNewCategoryValue('');
+  };
+
+  const confirmNewUnit = () => {
+    const value = newUnitValue.trim();
+    if (value) {
+      setExtraUnits((prev) => prev.includes(value) ? prev : [...prev, value]);
+      setFormData((prev) => ({ ...prev, unit: value }));
+    }
+    setAddingUnit(false);
+    setNewUnitValue('');
+  };
 
   const handleOpenModal = (productId?: string) => {
+    setAddingCategory(false);
+    setAddingUnit(false);
+    setNewCategoryValue('');
+    setNewUnitValue('');
     if (productId) {
       const product = products.find(p => p.id === productId);
       if (product) {
@@ -267,33 +316,87 @@ export function Products() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Category</label>
-                    <select
-                      className="form-select"
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      required
-                    >
-                      <option value="">Select category</option>
-                      {categories.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                    {addingCategory ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          autoFocus
+                          value={newCategoryValue}
+                          onChange={(e) => setNewCategoryValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); confirmNewCategory(); }
+                            if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryValue(''); }
+                          }}
+                          placeholder="New category name"
+                        />
+                        <button type="button" className="btn btn-sm btn-primary" onClick={confirmNewCategory}>
+                          <Check size={14} />
+                        </button>
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setAddingCategory(false); setNewCategoryValue(''); }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="form-select"
+                        value={formData.category}
+                        onChange={(e) => {
+                          if (e.target.value === ADD_NEW) { setAddingCategory(true); return; }
+                          setFormData({ ...formData, category: e.target.value });
+                        }}
+                        required
+                      >
+                        <option value="">Select category</option>
+                        {categories.map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                        <option value={ADD_NEW}>+ Add new category...</option>
+                      </select>
+                    )}
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Packing (Unit)</label>
-                    <select
-                      className="form-select"
-                      value={formData.unit}
-                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                      required
-                    >
-                      <option value="">Select packing</option>
-                      {units.map((unit) => (
-                        <option key={unit} value={unit}>{unit}</option>
-                      ))}
-                    </select>
+                    {addingUnit ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          autoFocus
+                          value={newUnitValue}
+                          onChange={(e) => setNewUnitValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); confirmNewUnit(); }
+                            if (e.key === 'Escape') { setAddingUnit(false); setNewUnitValue(''); }
+                          }}
+                          placeholder="e.g., 20KG"
+                        />
+                        <button type="button" className="btn btn-sm btn-primary" onClick={confirmNewUnit}>
+                          <Check size={14} />
+                        </button>
+                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setAddingUnit(false); setNewUnitValue(''); }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="form-select"
+                        value={formData.unit}
+                        onChange={(e) => {
+                          if (e.target.value === ADD_NEW) { setAddingUnit(true); return; }
+                          setFormData({ ...formData, unit: e.target.value });
+                        }}
+                        required
+                      >
+                        <option value="">Select packing</option>
+                        {units.map((unit) => (
+                          <option key={unit} value={unit}>{unit}</option>
+                        ))}
+                        <option value={ADD_NEW}>+ Add new packing...</option>
+                      </select>
+                    )}
                   </div>
                   <div className="form-group">
                     <label className="form-label">Case Qty</label>
