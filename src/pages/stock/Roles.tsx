@@ -220,7 +220,7 @@ export function Roles() {
       </div>
 
       {error && (
-        <div style={{ background: '#fee', border: '1px solid #c00', color: '#c00', padding: '10px 14px', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' }}>
+        <div className="alert alert-danger" style={{ marginBottom: '16px' }}>
           {error}
         </div>
       )}
@@ -229,17 +229,15 @@ export function Roles() {
           this RBAC migration ships most non-admin users will land here and
           need fast reassignment. */}
       {unassignedUsers.length > 0 && !bannerDismissed && (
-        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <AlertTriangle size={22} style={{ color: '#d97706', flexShrink: 0 }} />
+        <div className="unassigned-banner">
+          <div className="unassigned-banner-header">
+            <div className="unassigned-banner-heading">
+              <span className="unassigned-banner-icon">
+                <AlertTriangle size={20} />
+              </span>
               <div>
-                <h3 style={{ margin: 0, fontSize: '16px', color: '#92400e' }}>
-                  {unassignedUsers.length} user{unassignedUsers.length !== 1 ? 's' : ''} with no role assigned
-                </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#92400e' }}>
-                  These users currently have no permissions. Assign them a role below.
-                </p>
+                <h3>{unassignedUsers.length} user{unassignedUsers.length !== 1 ? 's' : ''} with no role assigned</h3>
+                <p>These users currently have no permissions. Assign them a role below.</p>
               </div>
             </div>
             <button className="btn btn-sm btn-secondary" onClick={() => setBannerDismissed(true)}>
@@ -248,12 +246,13 @@ export function Roles() {
           </div>
 
           <div className="table-container">
-            <table className="data-table">
+            <table className="table">
               <thead>
                 <tr>
                   <th style={{ width: '36px' }}>
                     <input
                       type="checkbox"
+                      className="styled-checkbox"
                       checked={selectedUserIds.length === unassignedUsers.length && unassignedUsers.length > 0}
                       onChange={toggleSelectAllUnassigned}
                     />
@@ -269,20 +268,21 @@ export function Roles() {
                     <td>
                       <input
                         type="checkbox"
+                        className="styled-checkbox"
                         checked={selectedUserIds.includes(u.id)}
                         onChange={() => toggleUserSelected(u.id)}
                       />
                     </td>
-                    <td>{u.name}</td>
-                    <td>{u.email}</td>
-                    <td>{u.phone}</td>
+                    <td style={{ fontWeight: 500 }}>{u.name}</td>
+                    <td className="text-gray-600">{u.email}</td>
+                    <td className="text-gray-600">{u.phone}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+          <div className="unassigned-banner-actions">
             <select
               className="form-select"
               style={{ maxWidth: '260px' }}
@@ -306,74 +306,82 @@ export function Roles() {
       )}
 
       {/* Roles list */}
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Data Scope</th>
-              <th>Users</th>
-              <th>Type</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {roles.map(role => (
-              <tr key={role.id}>
-                <td>
-                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck size={16} style={{ color: '#6366f1' }} />
-                    {role.name}
-                  </div>
-                  {role.description && (
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{role.description}</div>
-                  )}
-                </td>
-                <td>
-                  <span className="badge badge-info">{DATA_SCOPE_LABELS[role.dataScope]}</span>
-                  {role.isFieldStaff && (
-                    <span className="badge badge-info" style={{ marginLeft: '6px' }}>Field staff</span>
-                  )}
-                </td>
-                <td>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <UsersIcon size={14} style={{ color: '#94a3b8' }} />
-                    {role.userCount ?? 0}
-                  </span>
-                </td>
-                <td>
-                  {role.isSystem ? (
-                    <span className="badge badge-primary">Administrator</span>
-                  ) : (
-                    <span className="badge badge-success">Custom</span>
-                  )}
-                </td>
-                <td>
-                  <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
-                    <button className="btn btn-sm btn-secondary" onClick={() => handleOpenModal(role)}>
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={() => handleDelete(role)}
-                      disabled={role.isSystem}
-                      title={role.isSystem ? 'The Administrator role cannot be deleted' : undefined}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {roles.length === 0 && (
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="table-container">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
-                  No roles yet. Click "Add Role" to create one.
-                </td>
+                <th>Role</th>
+                <th>Data Scope</th>
+                <th>Users</th>
+                <th>Type</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {roles.map(role => (
+                <tr key={role.id}>
+                  <td>
+                    <div className="role-name-cell">
+                      <span className={`role-icon ${role.isSystem ? 'role-icon-admin' : ''}`}>
+                        <ShieldCheck size={16} />
+                      </span>
+                      <div>
+                        <div className="role-name">{role.name}</div>
+                        {role.description && (
+                          <div className="role-description">{role.description}</div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      <span className="badge badge-info">{DATA_SCOPE_LABELS[role.dataScope]}</span>
+                      {role.isFieldStaff && (
+                        <span className="badge badge-success">Field staff</span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--gray-600)' }}>
+                      <UsersIcon size={14} style={{ color: 'var(--gray-400)' }} />
+                      {role.userCount ?? 0}
+                    </span>
+                  </td>
+                  <td>
+                    {role.isSystem ? (
+                      <span className="badge badge-primary">Administrator</span>
+                    ) : (
+                      <span className="badge badge-warning">Custom</span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="action-buttons" style={{ justifyContent: 'flex-end' }}>
+                      <button className="btn btn-sm btn-secondary" onClick={() => handleOpenModal(role)}>
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => handleDelete(role)}
+                        disabled={role.isSystem}
+                        title={role.isSystem ? 'The Administrator role cannot be deleted' : undefined}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {roles.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)' }}>
+                    No roles yet. Click "Add Role" to create one.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showModal && (
@@ -388,7 +396,7 @@ export function Roles() {
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 {formError && (
-                  <div style={{ background: '#fee', border: '1px solid #c00', color: '#c00', padding: '10px 14px', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' }}>
+                  <div className="alert alert-danger" style={{ marginBottom: '16px' }}>
                     {formError}
                   </div>
                 )}
@@ -424,16 +432,18 @@ export function Roles() {
                   </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={formData.isFieldStaff}
-                      onChange={(e) => setFormData({ ...formData, isFieldStaff: e.target.checked })}
-                    />
-                    Field staff (tracked on Route Tracking, can use "My Route")
-                  </label>
-                </div>
+                <label className="field-staff-toggle">
+                  <input
+                    type="checkbox"
+                    className="styled-checkbox"
+                    checked={formData.isFieldStaff}
+                    onChange={(e) => setFormData({ ...formData, isFieldStaff: e.target.checked })}
+                  />
+                  <div>
+                    <div className="field-staff-toggle-title">Field staff</div>
+                    <div className="field-staff-toggle-hint">Tracked on Route Tracking, can use "My Route"</div>
+                  </div>
+                </label>
 
                 <div className="form-group">
                   <label className="form-label">Description</label>
@@ -446,10 +456,11 @@ export function Roles() {
                   />
                 </div>
 
-                <div style={{ marginTop: '20px' }}>
-                  <h4 style={{ margin: '0 0 12px', fontSize: '14px', color: '#334155' }}>Permissions</h4>
-                  <div className="table-container">
-                    <table className="data-table">
+                <div className="permissions-section">
+                  <h4>Permissions</h4>
+                  <p className="permissions-hint">Click a module name to toggle its whole row, or a column heading to toggle it for every module.</p>
+                  <div className="table-container permission-matrix">
+                    <table className="table">
                       <thead>
                         <tr>
                           <th>Module</th>
@@ -469,11 +480,12 @@ export function Roles() {
                         {MODULE_KEYS.map(key => {
                           const row = formData.permissions[key];
                           const allOn = ACTIONS.every(a => row[a]);
+                          const someOn = ACTIONS.some(a => row[a]);
                           return (
-                            <tr key={key}>
+                            <tr key={key} className={someOn ? 'permission-row-active' : undefined}>
                               <td>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 500 }}>
-                                  <input type="checkbox" checked={allOn} onChange={() => toggleRow(key)} />
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 500 }}>
+                                  <input type="checkbox" className="styled-checkbox" checked={allOn} onChange={() => toggleRow(key)} />
                                   {MODULE_LABELS[key] || key}
                                 </label>
                               </td>
@@ -481,6 +493,7 @@ export function Roles() {
                                 <td key={action} style={{ textAlign: 'center' }}>
                                   <input
                                     type="checkbox"
+                                    className="styled-checkbox"
                                     checked={row[action]}
                                     onChange={() => togglePermission(key, action)}
                                   />
