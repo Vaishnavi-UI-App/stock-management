@@ -43,7 +43,6 @@ interface MenuItemDef {
 }
 
 const ALL_MENU_ITEMS: MenuItemDef[] = [
-  { path: '/products', icon: Package, label: 'Products', module: 'products', anyModule: ['products', 'companyStock', 'stockAlerts', 'expiryTracking', 'damageTracking'] },
   { path: '/users', icon: Users, label: 'Employee', module: 'users' },
   { path: '/expenditures', icon: Receipt, label: 'Expenditures', module: 'expenditures' },
   { path: '/customer-ledger', icon: Wallet, label: 'Customer Ledger', module: 'customerLedger' },
@@ -72,6 +71,14 @@ const ALWAYS_VISIBLE_ITEMS: MenuItemDef[] = [
 const FIELD_STAFF_ITEMS: MenuItemDef[] = [
   { path: '/my-route', icon: Navigation, label: 'My Route', module: '' },
 ];
+
+// Everyone can place an order, so everyone needs to be able to see what's in
+// the catalog — otherwise a salesman without 'products' view can order items
+// but has no page to look up what exists. Only the list is open: adding,
+// editing and deleting products stay behind their own permissions (in the
+// page and on the server), and the other tabs on this page (Company Stock,
+// Stock Alerts, ...) still appear only for users granted them.
+const PRODUCTS_ITEM: MenuItemDef = { path: '/products', icon: Package, label: 'Products', module: '' };
 
 // Always the last item in the sidebar, after every permission-gated entry.
 const SETTINGS_ITEM: MenuItemDef = { path: '/settings', icon: SettingsIcon, label: 'Settings', module: '' };
@@ -105,7 +112,7 @@ export function Layout({ children }: LayoutProps) {
 
     const fieldStaffItems = currentUser?.isFieldStaff ? FIELD_STAFF_ITEMS : [];
 
-    return [...baseItems, ...ALWAYS_VISIBLE_ITEMS, ...fieldStaffItems, ...permittedItems, SETTINGS_ITEM];
+    return [...baseItems, ...ALWAYS_VISIBLE_ITEMS, ...fieldStaffItems, PRODUCTS_ITEM, ...permittedItems, SETTINGS_ITEM];
   };
 
   const menuItems = getMenuItems();

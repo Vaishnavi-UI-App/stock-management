@@ -16,14 +16,16 @@ type ProductsTab = 'products' | 'companyStock' | 'stockAlerts' | 'expiryTracking
 // component.
 export function ProductsHub() {
   const { currentUser } = useStore();
-  const canViewProducts = !!currentUser?.permissions?.products?.view;
   const canViewCompanyStock = !!currentUser?.permissions?.companyStock?.view;
   const canViewStockAlerts = !!currentUser?.permissions?.stockAlerts?.view;
   const canViewExpiryTracking = !!currentUser?.permissions?.expiryTracking?.view;
   const canViewDamageTracking = !!currentUser?.permissions?.damageTracking?.view;
 
+  // The product list itself is visible to everyone (all users place orders and
+  // need to see the catalog); Products.tsx hides add/edit/delete for anyone
+  // without those permissions. Only the other tabs are permission-gated.
   const tabs: { key: ProductsTab; label: string; icon: typeof Package }[] = [
-    ...(canViewProducts ? [{ key: 'products' as const, label: 'Products', icon: Package }] : []),
+    { key: 'products' as const, label: 'Products', icon: Package },
     ...(canViewCompanyStock ? [{ key: 'companyStock' as const, label: 'Company Stock', icon: Boxes }] : []),
     ...(canViewStockAlerts ? [{ key: 'stockAlerts' as const, label: 'Stock Alerts', icon: AlertTriangle }] : []),
     ...(canViewExpiryTracking ? [{ key: 'expiryTracking' as const, label: 'Expiry Tracking', icon: CalendarClock }] : []),
@@ -71,7 +73,7 @@ export function ProductsHub() {
         })}
       </div>
 
-      {activeTab === 'products' && canViewProducts && <Products />}
+      {activeTab === 'products' && <Products />}
       {activeTab === 'companyStock' && canViewCompanyStock && <CompanyStock />}
       {activeTab === 'stockAlerts' && canViewStockAlerts && <StockAlerts />}
       {activeTab === 'expiryTracking' && canViewExpiryTracking && <ExpiryTracking />}

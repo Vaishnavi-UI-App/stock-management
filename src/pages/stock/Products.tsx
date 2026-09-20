@@ -10,7 +10,16 @@ const DEFAULT_UNITS = ['1KG', '2.5KG', '5KG', '10KG', '25KG', '500GM', '250GM'];
 const ADD_NEW = '__add_new__';
 
 export function Products() {
-  const { products, addProduct, updateProduct, deleteProduct } = useStore();
+  const { products, addProduct, updateProduct, deleteProduct, currentUser } = useStore();
+
+  // This page is visible to every user (everyone places orders and needs to
+  // see the catalog), so the management controls are gated here individually.
+  // The server enforces the same permissions on POST/PUT/DELETE regardless.
+  const canCreate = !!currentUser?.permissions?.products?.create;
+  const canEdit = !!currentUser?.permissions?.products?.edit;
+  const canDelete = !!currentUser?.permissions?.products?.delete;
+  const showActions = canEdit || canDelete;
+
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -178,12 +187,14 @@ export function Products() {
       <div className="page-header">
         <div>
           <h1>Products</h1>
-          <p>Manage your product catalog</p>
+          <p>{canCreate || showActions ? 'Manage your product catalog' : 'Browse the product catalog'}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => handleOpenModal()}>
-          <Plus size={18} />
-          Add Product
-        </button>
+        {canCreate && (
+          <button className="btn btn-primary" onClick={() => handleOpenModal()}>
+            <Plus size={18} />
+            Add Product
+          </button>
+        )}
       </div>
 
       <div className="search-bar">
@@ -212,7 +223,7 @@ export function Products() {
                 <th>Batch No</th>
                 <th>MFG Date</th>
                 <th>Exp Date</th>
-                <th>Actions</th>
+                {showActions && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -248,27 +259,33 @@ export function Products() {
                         </span>
                       ) : '-'}
                     </td>
-                    <td>
-                      <div className="action-buttons">
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => handleOpenModal(product.id)}
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={() => handleDelete(product.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
+                    {showActions && (
+                      <td>
+                        <div className="action-buttons">
+                          {canEdit && (
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => handleOpenModal(product.id)}
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleDelete(product.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={11} className="text-center text-gray-500">
+                  <td colSpan={showActions ? 11 : 10} className="text-center text-gray-500">
                     No products found
                   </td>
                 </tr>
