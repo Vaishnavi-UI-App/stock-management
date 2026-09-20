@@ -4,7 +4,15 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/logo.png" />
+    <!-- iPhone install ("Share > Add to Home Screen"): iOS needs a square icon
+         (the wide /logo.png banner got cropped) and these tags so it launches
+         full-screen like an app instead of inside Safari's toolbar, which
+         older iOS versions do regardless of the manifest's display mode. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="DynamicIndia" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#00a651" />
     <meta name="description" content="DynamicIndia - ERP System" />
