@@ -292,7 +292,7 @@ export function RouteTracking() {
       </div>
 
       {/* Distance Comparison */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div className="route-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
         {/* Distance ranking - all salesmen */}
         <div className="card">
           <div className="card-header">
@@ -400,7 +400,7 @@ export function RouteTracking() {
       </div>
 
       {/* Map + Sidebar */}
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div className="route-map-grid" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
         {/* Sidebar - Salesman List */}
         <div className="card" style={{ maxHeight: '560px', display: 'flex', flexDirection: 'column' }}>
           <div className="card-header" style={{ flexShrink: 0 }}>
@@ -504,7 +504,7 @@ export function RouteTracking() {
 
       {/* Selected Salesman Details */}
       {selectedSalesman && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+        <div className="route-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
           {/* Summary */}
           {summary && (
             <div className="card">
@@ -659,8 +659,15 @@ export function RouteTracking() {
           to { transform: rotate(360deg); }
         }
         @media (max-width: 768px) {
-          .stock-page > div:nth-child(3) {
+          .route-two-col,
+          .route-map-grid {
             grid-template-columns: 1fr !important;
+          }
+          /* Show the map above the salesman list on mobile — the map is
+             what people actually came here to see, and a 300px-wide sidebar
+             squeezed next to it is what made the map unreadable before. */
+          .route-map-grid > div:last-child {
+            order: -1;
           }
         }
       `}</style>
