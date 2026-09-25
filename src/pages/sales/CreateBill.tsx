@@ -46,23 +46,23 @@ export function CreateBill() {
   const [suggestionField, setSuggestionField] = useState<'name' | 'gstin' | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // An empty query is a deliberate case, not "nothing to search yet" — the
+  // backend returns this user's most recent customers for it (scoped to
+  // their own for field staff, everyone for admin/branch managers), so
+  // clicking into an empty field browses the full list instead of requiring
+  // the customer to type something first.
   const runCustomerSearch = (query: string, field: 'name' | 'gstin') => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     const term = query.trim();
-    if (term.length < 2) {
-      setCustomerSuggestions([]);
-      setSuggestionField(null);
-      return;
-    }
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const results = await customersApi.search(term, 8);
+        const results = await customersApi.search(term, 50);
         setCustomerSuggestions(Array.isArray(results) ? results : []);
         setSuggestionField(field);
       } catch {
         setCustomerSuggestions([]);
       }
-    }, 250);
+    }, 200);
   };
 
   const selectCustomerSuggestion = (c: { name: string; phone: string; email?: string | null; address?: string | null; gstin?: string | null }) => {
@@ -617,7 +617,7 @@ export function CreateBill() {
                   setCustomerName(e.target.value);
                   runCustomerSearch(e.target.value, 'name');
                 }}
-                onFocus={() => { if (customerName.trim().length >= 2) runCustomerSearch(customerName, 'name'); }}
+                onFocus={() => runCustomerSearch(customerName, 'name')}
                 onBlur={() => setTimeout(() => setSuggestionField(f => (f === 'name' ? null : f)), 150)}
                 placeholder="Enter customer name"
                 autoComplete="off"
@@ -686,7 +686,7 @@ export function CreateBill() {
                   setCustomerGSTIN(e.target.value);
                   runCustomerSearch(e.target.value, 'gstin');
                 }}
-                onFocus={() => { if (customerGSTIN.trim().length >= 2) runCustomerSearch(customerGSTIN, 'gstin'); }}
+                onFocus={() => runCustomerSearch(customerGSTIN, 'gstin')}
                 onBlur={() => setTimeout(() => setSuggestionField(f => (f === 'gstin' ? null : f)), 150)}
                 placeholder="Customer GSTIN"
                 autoComplete="off"

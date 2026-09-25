@@ -3,7 +3,7 @@ import { Package, Search, Plus, Minus, Trash2, Printer, Clock, Send, ShoppingBag
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useStore } from '../../store/useStore';
-import { ordersApi } from '../../services/api';
+import { ordersApi, customersApi } from '../../services/api';
 import type { OrderItem, Order } from '../../types';
 import { PurchaseInvoice } from '../../components/PurchaseInvoice';
 import { format } from 'date-fns';
@@ -34,6 +34,36 @@ export function MyOrders() {
 
   const [orderLocation, setOrderLocation] = useState('');
   const [orderCoords, setOrderCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Customer autocomplete — click into the (initially empty) Customer Name
+  // field to browse this user's own customer list (all customers for an
+  // admin/branch manager), or type to narrow it down.
+  const [customerSuggestions, setCustomerSuggestions] = useState<Array<{
+    id: string; name: string; phone: string; email?: string | null;
+  }>>([]);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const customerSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const runCustomerSearch = (query: string) => {
+    if (customerSearchTimerRef.current) clearTimeout(customerSearchTimerRef.current);
+    const term = query.trim();
+    customerSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await customersApi.search(term, 50);
+        setCustomerSuggestions(Array.isArray(results) ? results : []);
+        setShowCustomerSuggestions(true);
+      } catch {
+        setCustomerSuggestions([]);
+      }
+    }, 200);
+  };
+
+  const selectCustomerSuggestion = (c: { name: string; phone: string; email?: string | null }) => {
+    setCustomerName(c.name || '');
+    setCustomerPhone(c.phone || '');
+    setCustomerEmail(c.email || '');
+    setShowCustomerSuggestions(false);
+  };
 
   const [orderSubmitted, setOrderSubmitted] = useState(false);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
@@ -664,15 +694,39 @@ export function MyOrders() {
                 </div>
               )}
 
-              <div className="form-group">
+              <div className="form-group" style={{ position: 'relative' }}>
                 <label className="form-label">Customer Name *</label>
                 <input
                   type="text"
                   className="form-input"
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
+                  onChange={(e) => { setCustomerName(e.target.value); runCustomerSearch(e.target.value); }}
+                  onFocus={() => runCustomerSearch(customerName)}
+                  onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 150)}
                   placeholder="Enter customer name"
+                  autoComplete="off"
                 />
+                {showCustomerSuggestions && customerSuggestions.length > 0 && (
+                  <ul style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+                    background: '#fff', border: '1px solid #d1d5db', borderRadius: 6,
+                    margin: 0, padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  }}>
+                    {customerSuggestions.map(c => (
+                      <li
+                        key={c.id}
+                        onMouseDown={(e) => { e.preventDefault(); selectCustomerSuggestion(c); }}
+                        style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                      >
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                        <div style={{ fontSize: 12, color: '#666' }}>{c.phone}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">Phone *</label>
