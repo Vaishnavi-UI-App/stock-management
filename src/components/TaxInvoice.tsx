@@ -235,7 +235,7 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
               return (
                 <tr key={index}>
                   <td className="col-sno">{index + 1}</td>
-                  <td className="col-item">{item.productName} {item.unit || product?.unit || ''}</td>
+                  <td className="col-item">{item.productName}</td>
                   <td className="col-qty">{item.quantity}</td>
                   <td className="col-hsn">{item.hsnCode || product?.sku || '-'}</td>
                   <td className="col-batch">{item.batchNo || '-'}</td>

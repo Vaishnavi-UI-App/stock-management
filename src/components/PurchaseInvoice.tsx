@@ -247,7 +247,7 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
                 <tr key={index} style={isNotAvailable ? { background: '#fff3cd' } : undefined}>
                   <td className="col-sno">{index + 1}</td>
                   <td className="col-item">
-                    {item.productName} {item.unit || product?.unit || ''}
+                    {item.productName}
                     {isNotAvailable && (
                       <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', background: '#dc3545', color: '#fff', borderRadius: '3px' }}>
                         N/A
