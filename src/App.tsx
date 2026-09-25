@@ -9,10 +9,33 @@ import { gpsApi } from './services/api';
 
 // Lazily load each page so a user only downloads the code for the pages their
 // role can reach. Helper maps named exports to the default export lazy() wants.
+//
+// Each deploy rebuilds the frontend image from scratch, so every JS chunk's
+// content-hashed filename changes and the old files simply don't exist in
+// the new container. A browser tab left open from before a deploy still has
+// yesterday's chunk URLs baked into its already-loaded bundle; the first
+// time it lazy-loads a page it hasn't visited yet, that fetch 404s and the
+// whole page area renders blank — with no visible error, this reads as
+// "data disappeared". Reload once (not in a loop) to pick up the current
+// build instead of leaving that blank page.
+const CHUNK_RELOAD_KEY = 'chunk-reload-attempted';
+
 const page = <T extends Record<string, React.ComponentType<any>>>(
   loader: () => Promise<T>,
   name: keyof T,
-) => lazy(() => loader().then((m) => ({ default: m[name] })));
+) => lazy(() =>
+  loader()
+    .then((m) => ({ default: m[name] }))
+    .catch((err) => {
+      if (!sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+        window.location.reload();
+        // Never resolve — the reload is about to replace this whole page.
+        return new Promise<{ default: T[keyof T] }>(() => {});
+      }
+      throw err;
+    })
+);
 
 const Dashboard = page(() => import('./pages/dashboard/Dashboard'), 'Dashboard');
 const ProductsHub = page(() => import('./pages/stock/ProductsHub'), 'ProductsHub');
@@ -119,6 +142,15 @@ function ProtectedRoute({
 
 function App() {
   const { isAuthenticated, fetchAllData, refreshCurrentUser } = useStore();
+
+  // A stale chunk triggers one reload (see the `page` helper above); once
+  // this fresh load has actually rendered, allow a *later* deploy during
+  // this same long-lived tab to trigger its own single reload too, rather
+  // than staying permanently blocked after the first recovery.
+  useEffect(() => {
+    const t = setTimeout(() => sessionStorage.removeItem(CHUNK_RELOAD_KEY), 10000);
+    return () => clearTimeout(t);
+  }, []);
 
   // Re-fetch the user's own record and all data when the app loads and the
   // user is already authenticated — refreshCurrentUser picks up any
