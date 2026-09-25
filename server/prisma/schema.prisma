@@ -146,6 +146,7 @@ model User {
   chatParticipations ConversationParticipant[]
   chatMessages       ChatMessage[]
   chatConversationsCreated Conversation[] @relation("ConversationCreator")
+  customersCreated Customer[]
 }
 
 enum UserRole {
@@ -313,6 +314,12 @@ model Customer {
   isActive       Boolean @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  // Who this customer belongs to — the salesman who first billed/added them.
+  // Lets the customer list be scoped to "my customers" for field staff, while
+  // admins/managers still see everyone. Null for customers that predate this
+  // field or were created by an admin/system flow (dealer approval, etc).
+  createdBy      String?
+  creator        User?    @relation(fields: [createdBy], references: [id])
 
   // Relations
   sales        Sale[]

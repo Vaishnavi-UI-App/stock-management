@@ -1375,7 +1375,8 @@ app.post('/api/sales', authMiddleware, async (req, res) => {
               email: saleData.customerEmail || null,
               address: saleData.customerAddress || null,
               gstin: saleData.customerGSTIN || null,
-              pan: saleData.customerPAN || null
+              pan: saleData.customerPAN || null,
+              createdBy: req.user.id
             }
           });
         }
@@ -1764,6 +1765,13 @@ app.get('/api/customers', authMiddleware, async (req, res) => {
         { phone: { contains: term } },
       ];
     }
+    // Field staff (salesmen) only see customers they've created themselves —
+    // an admin/branch manager still sees everyone, since they legitimately
+    // manage the whole customer base.
+    const scope = req.user.roleRef?.dataScope ?? LEGACY_DATA_SCOPE_BY_ROLE[req.user.role] ?? 'own_records';
+    if (scope === 'own_records') {
+      where.createdBy = req.user.id;
+    }
     const customers = await prisma.customer.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -1820,7 +1828,7 @@ app.get('/api/customers/phone/:phone', authMiddleware, async (req, res) => {
 app.post('/api/customers', authMiddleware, async (req, res) => {
   try {
     const customer = await prisma.customer.create({
-      data: req.body
+      data: { ...req.body, createdBy: req.user.id }
     });
 
     createAuditLog(req.user.id, 'CREATE', 'Customer', customer.id, null, { name: customer.name, phone: customer.phone }, req.ip);
@@ -2486,7 +2494,10 @@ app.put('/api/orders/:id/approve', authMiddleware, requirePermission('orders', '
               email: order.customerEmail || null,
               address: order.customerAddress || null,
               gstin: order.customerGSTIN || null,
-              pan: order.customerPAN || null
+              pan: order.customerPAN || null,
+              // Belongs to the salesman who took the order, not whoever
+              // (e.g. an admin) is approving it right now.
+              createdBy: order.salesmanId
             }
           });
         }
@@ -5005,7 +5016,8 @@ app.put('/api/dealer-applications/:id/approve', authMiddleware, requirePermissio
         await prisma.customer.upsert({
           where: { phone },
           update: customerData,
-          create: { phone, ...customerData },
+          // Belongs to the salesman who submitted the dealer application.
+          create: { phone, ...customerData, createdBy: application.userId },
         });
       } catch (upsertErr) {
         console.error('Dealer->Customer upsert failed:', upsertErr.message);
