@@ -3680,9 +3680,36 @@ app.get('/api/product-batches', authMiddleware, requirePermission('expiryTrackin
 
 app.post('/api/product-batches', authMiddleware, requirePermission('expiryTracking', 'create'), async (req, res) => {
   try {
-    const batch = await prisma.productBatch.create({ data: req.body });
+    const { productId, batchNo, mfgDate, expDate, quantity, branchId } = req.body;
+
+    if (!productId || !batchNo?.trim() || !expDate || quantity == null || quantity === '') {
+      return res.status(400).json({ error: 'Product, batch number, expiry date, and quantity are all required.' });
+    }
+
+    const batch = await prisma.productBatch.create({
+      data: {
+        productId,
+        batchNo: batchNo.trim(),
+        mfgDate: mfgDate ? new Date(mfgDate) : undefined,
+        expDate: new Date(expDate),
+        quantity: parseInt(quantity, 10) || 0,
+        branchId: branchId || undefined,
+      },
+    });
     res.json(batch);
-  } catch (error) { res.status(500).json({ error: error.message }); }
+  } catch (error) {
+    // Surface the two failures a user can actually act on with a plain-English
+    // message; anything else stays generic so raw Prisma/DB internals never
+    // reach the browser, while the real error is still logged for debugging.
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'This product already has a batch with that batch number.' });
+    }
+    if (error.code === 'P2003') {
+      return res.status(400).json({ error: 'The selected product or branch no longer exists.' });
+    }
+    console.error('Failed to create product batch:', error);
+    res.status(500).json({ error: 'Failed to create batch. Please check the details and try again.' });
+  }
 });
 
 // ==================== FEATURE 7: SALESMAN PERFORMANCE ====================

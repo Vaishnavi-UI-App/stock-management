@@ -230,11 +230,11 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
             <tr>
               <th className="col-sno">S.NO.</th>
               <th className="col-item">ITEMS</th>
+              <th className="col-qty">TOTAL QTY.</th>
               <th className="col-hsn">HSN</th>
               <th className="col-batch">BATCH NO.</th>
               <th className="col-exp">EXP. DATE</th>
               <th className="col-mfg">MFG DATE</th>
-              <th className="col-qty">QTY.</th>
               <th className="col-rate">RATE</th>
               <th className="col-amount">AMOUNT</th>
             </tr>
@@ -254,11 +254,11 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
                       </span>
                     )}
                   </td>
+                  <td className="col-qty">{item.quantity}</td>
                   <td className="col-hsn">{item.hsnCode || product?.sku || '-'}</td>
                   <td className="col-batch">{item.batchNo || '-'}</td>
                   <td className="col-exp">{item.expDate || '-'}</td>
                   <td className="col-mfg">{item.mfgDate || '-'}</td>
-                  <td className="col-qty">{item.quantity}</td>
                   <td className="col-rate">{item.price}</td>
                   <td className="col-amount">{item.total.toLocaleString()}</td>
                 </tr>

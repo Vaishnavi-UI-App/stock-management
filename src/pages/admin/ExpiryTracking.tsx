@@ -21,6 +21,8 @@ export function ExpiryTracking() {
   const [loading, setLoading] = useState(false);
   const [filterDays, setFilterDays] = useState<number | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     productId: '',
     batchNo: '',
@@ -73,14 +75,31 @@ export function ExpiryTracking() {
   const expiringSoon = batches.filter(b => { const d = getDaysToExpiry(b.expDate); return d > 0 && d <= 30; });
   const safe = batches.filter(b => getDaysToExpiry(b.expDate) > 30);
 
+  const closeModal = () => {
+    setShowModal(false);
+    setFormError(null);
+    setForm({ productId: '', batchNo: '', mfgDate: '', expDate: '', quantity: 0, branchId: '' });
+  };
+
   const handleSubmit = async () => {
+    if (!form.productId) return setFormError('Please select a product.');
+    if (!form.batchNo.trim()) return setFormError('Please enter a batch number.');
+    if (!form.expDate) return setFormError('Please enter an expiry date.');
+    if (!form.quantity || form.quantity <= 0) return setFormError('Quantity must be greater than 0.');
+
+    setFormError(null);
+    setSaving(true);
     try {
       await batchesApi.create(form);
-      setShowModal(false);
-      setForm({ productId: '', batchNo: '', mfgDate: '', expDate: '', quantity: 0, branchId: '' });
+      closeModal();
       loadBatches();
     } catch (e: any) {
-      alert(e.message);
+      // The server already translates common failures (duplicate batch
+      // number, missing product/branch) into a plain-English message here —
+      // this only needs to display it, never format or explain it further.
+      setFormError(e.message || 'Failed to create batch. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -187,9 +206,12 @@ export function ExpiryTracking() {
           <div style={{ background: '#fff', borderRadius: 16, padding: 32, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <h2 style={{ fontSize: 20, fontWeight: 700 }}>Add New Batch</h2>
-              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+              <button onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {formError && (
+                <div className="alert alert-danger">{formError}</div>
+              )}
               <div>
                 <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Product</label>
                 <select value={form.productId} onChange={e => setForm({ ...form, productId: e.target.value })} className="form-select" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }}>
@@ -224,8 +246,12 @@ export function ExpiryTracking() {
                   </select>
                 </div>
               </div>
-              <button onClick={handleSubmit} style={{ marginTop: 8, background: '#00a651', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15, width: '100%' }}>
-                Add Batch
+              <button
+                onClick={handleSubmit}
+                disabled={saving}
+                style={{ marginTop: 8, background: '#00a651', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, fontWeight: 600, fontSize: 15, width: '100%' }}
+              >
+                {saving ? 'Adding...' : 'Add Batch'}
               </button>
             </div>
           </div>
