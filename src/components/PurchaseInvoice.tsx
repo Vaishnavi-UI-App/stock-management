@@ -30,6 +30,12 @@ interface PurchaseInvoiceProps {
 }
 
 // Convert number to words
+// Every bill's items table has at least this many rows (padded with blank
+// ones when short) so a 1-item bill still lands its totals/HSN/bank/terms
+// sections in the same place as every other bill. A bill with more items
+// than this just grows — it's never truncated.
+const MIN_ITEM_ROWS = 5;
+
 function numberToWords(num: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
@@ -177,6 +183,10 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
   const paymentTagColors = order.paymentStatus === 'paid' ? { bg: '#d4edda', fg: '#155724' } :
                             order.paymentStatus === 'partial' ? { bg: '#fff3cd', fg: '#856404' } :
                             { bg: '#f8d7da', fg: '#721c24' };
+  // Pad short bills with blank rows so every section below always lands in
+  // the same place, whether the bill has 1 item or 15 — a bill with more
+  // items than this simply grows taller, it's never truncated.
+  const fillerRowCount = Math.max(0, MIN_ITEM_ROWS - order.items.length);
 
   return (
     <div className="tax-invoice" ref={ref}>
@@ -273,6 +283,19 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
                 </tr>
               );
             })}
+            {Array.from({ length: fillerRowCount }).map((_, i) => (
+              <tr key={`filler-${i}`} className="filler-row">
+                <td className="col-sno">&nbsp;</td>
+                <td className="col-item">&nbsp;</td>
+                <td className="col-hsn">&nbsp;</td>
+                <td className="col-batch">&nbsp;</td>
+                <td className="col-mfg">&nbsp;</td>
+                <td className="col-exp">&nbsp;</td>
+                <td className="col-qty">&nbsp;</td>
+                <td className="col-rate">&nbsp;</td>
+                <td className="col-amount">&nbsp;</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
