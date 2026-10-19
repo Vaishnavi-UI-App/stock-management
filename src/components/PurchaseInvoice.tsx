@@ -63,6 +63,38 @@ function numberToWords(num: number): string {
   return result;
 }
 
+// Small UPI app badges shown next to the QR code
+function UpiAppIcons() {
+  return (
+    <div className="inv-upi-apps">
+      <img
+        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%235f259f'/%3E%3Cpath d='M9 6h2.5l4 6-4 6H9l4-6-4-6z' fill='white'/%3E%3C/svg%3E"
+        alt="PhonePe"
+        className="inv-upi-app-icon"
+      />
+      <span className="inv-upi-app-label phonepe">PhonePe</span>
+      <svg className="inv-upi-app-icon gpay" viewBox="0 0 46 46">
+        <path fill="#4285F4" d="M23 0C10.3 0 0 10.3 0 23s10.3 23 23 23 23-10.3 23-23S35.7 0 23 0z" />
+        <path fill="#fff" d="M33 23.5c0-.8-.1-1.6-.2-2.3H23v4.4h5.6c-.2 1.2-.9 2.3-1.9 3v2.5h3.1c1.8-1.7 2.9-4.2 2.9-7.6z" />
+        <path fill="#fff" d="M23 35c2.6 0 4.8-.9 6.4-2.4l-3.1-2.5c-.9.6-2 .9-3.3.9-2.6 0-4.7-1.7-5.5-4.1h-3.2v2.6c1.6 3.2 5 5.5 8.7 5.5z" />
+        <path fill="#fff" d="M17.5 26.9c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2v-2.6h-3.2c-.7 1.3-1.1 2.8-1.1 4.4s.4 3.1 1.1 4.4l3.2-2.2z" />
+        <path fill="#fff" d="M23 17.7c1.5 0 2.8.5 3.8 1.5l2.8-2.8c-1.7-1.6-4-2.6-6.6-2.6-3.7 0-7.1 2.1-8.7 5.3l3.2 2.5c.8-2.4 2.9-4 5.5-4z" />
+      </svg>
+      <span className="inv-upi-app-label gpay">G Pay</span>
+      <svg className="inv-upi-app-icon paytm" viewBox="0 0 50 20">
+        <rect fill="#00BAF2" width="50" height="20" rx="3" />
+        <text x="5" y="14" fill="white" fontSize="10" fontWeight="bold" fontFamily="Arial">pay</text>
+        <text x="24" y="14" fill="#002970" fontSize="10" fontWeight="bold" fontFamily="Arial">tm</text>
+      </svg>
+      <svg className="inv-upi-app-icon upi" viewBox="0 0 50 20">
+        <rect fill="#fff" width="50" height="20" rx="2" stroke="#097969" strokeWidth="1" />
+        <text x="8" y="14" fill="#097969" fontSize="11" fontWeight="bold" fontFamily="Arial">UPI</text>
+        <path d="M38 5l6 5-6 5" fill="none" stroke="#f7931a" strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
+
 export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(({
   order,
   companyDetails = {
@@ -88,19 +120,16 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
   const { getProductById, getUserById } = useStore();
   const salesman = getUserById(order.salesmanId);
 
-  // Get GST rates from order or use defaults
   const cgstRate = order.cgstRate || 2.5;
   const sgstRate = order.sgstRate || 2.5;
   const totalGstRate = cgstRate + sgstRate;
 
-  // Merge delivery details from order
   const deliveryDetails = {
     paymentTerms: order.modeOfPayment || '',
     destination: order.destination || '',
     vehicleNo: order.vehicleNo || ''
   };
 
-  // Calculate GST breakdown by HSN
   const hsnSummary: { [key: string]: { taxableValue: number; cgst: number; sgst: number; total: number } } = {};
   let totalTaxableValue = 0;
   let totalCGST = 0;
@@ -110,7 +139,6 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
     const product = getProductById(item.productId);
     const hsn = item.hsnCode || product?.sku || '';
 
-    // Price is inclusive of GST, calculate backwards using order's GST rates
     const taxableValue = (item.total * 100) / (100 + totalGstRate);
     const cgst = (taxableValue * cgstRate) / 100;
     const sgst = (taxableValue * sgstRate) / 100;
@@ -130,113 +158,94 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
     }
   });
 
-  const invoiceDate = format(new Date(order.orderDate), 'dd-MMM-yy');
+  const invoiceDate = format(new Date(order.orderDate), 'dd-MMM-yyyy');
+  const totalQty = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Determine invoice title and status styling
   const isConverted = order.orderStatus === 'converted';
   const invoiceTitle = isConverted ? 'Tax Invoice' : 'Purchase Invoice';
-  const statusText = order.orderStatus === 'pending' ? 'PENDING APPROVAL' :
-                     order.orderStatus === 'approved' ? 'APPROVED' :
-                     order.orderStatus === 'rejected' ? 'REJECTED' :
-                     order.orderStatus === 'converted' ? 'CONVERTED TO TAX INVOICE' : '';
+  const statusText = order.orderStatus === 'pending' ? 'Pending Approval' :
+                     order.orderStatus === 'approved' ? 'Approved' :
+                     order.orderStatus === 'rejected' ? 'Rejected' :
+                     order.orderStatus === 'converted' ? 'Converted to Tax Invoice' : '';
+  const statusColors = order.orderStatus === 'pending' ? { bg: '#fff3cd', fg: '#856404' } :
+                        order.orderStatus === 'approved' ? { bg: '#d4edda', fg: '#155724' } :
+                        order.orderStatus === 'rejected' ? { bg: '#f8d7da', fg: '#721c24' } :
+                        { bg: '#cce5ff', fg: '#004085' };
+
+  const balance = Math.abs(order.finalAmount - (order.amountPaid || 0));
+  const isAdvance = (order.amountPaid || 0) >= order.finalAmount && (order.amountPaid || 0) > 0;
+  const paymentTagColors = order.paymentStatus === 'paid' ? { bg: '#d4edda', fg: '#155724' } :
+                            order.paymentStatus === 'partial' ? { bg: '#fff3cd', fg: '#856404' } :
+                            { bg: '#f8d7da', fg: '#721c24' };
 
   return (
     <div className="tax-invoice" ref={ref}>
       {/* Header */}
-      <div className="invoice-header-title">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <img src={logoImg} alt="Dynamic Crop Science" crossOrigin="anonymous" style={{ height: 32, objectFit: 'contain' }} />
-          <h2 style={{ margin: 0 }}>{invoiceTitle}</h2>
-        </div>
-        {!isConverted && statusText && (
-          <div style={{
-            fontSize: '12px',
-            padding: '4px 12px',
-            background: order.orderStatus === 'pending' ? '#fff3cd' :
-                        order.orderStatus === 'approved' ? '#d4edda' :
-                        order.orderStatus === 'rejected' ? '#f8d7da' : '#cce5ff',
-            color: order.orderStatus === 'pending' ? '#856404' :
-                   order.orderStatus === 'approved' ? '#155724' :
-                   order.orderStatus === 'rejected' ? '#721c24' : '#004085',
-            borderRadius: '4px',
-            marginTop: '8px'
-          }}>
-            {statusText}
+      <div className="inv-hd">
+        <div className="inv-co">
+          <img src={logoImg} alt={companyDetails.name} crossOrigin="anonymous" />
+          <div className="inv-co-text">
+            <h1>{companyDetails.name}</h1>
+            <p>{companyDetails.address}</p>
+            <p className="meta-line"><strong>GSTIN/UIN:</strong> {companyDetails.gstin} &nbsp;|&nbsp; <strong>State:</strong> {companyDetails.stateName}, Code {companyDetails.stateCode}</p>
+            <p className="meta-line"><strong>Email:</strong> {companyDetails.email}</p>
           </div>
-        )}
+        </div>
+        <div className="inv-title-box">
+          <div className="t">{invoiceTitle}</div>
+          {!isConverted && statusText && (
+            <div className="status-badge" style={{ background: statusColors.bg, color: statusColors.fg }}>
+              {statusText}
+            </div>
+          )}
+          {isConverted && <div className="o">Original for Recipient</div>}
+          <div className="inv-kv">
+            <span>{isConverted ? 'Invoice No.' : 'Order No.'}</span><b>{order.orderNumber}</b>
+            <span>Date</span><b>{invoiceDate}</b>
+          </div>
+        </div>
       </div>
 
-      {/* Main Header Section */}
-      <div className="invoice-header-section">
-        {/* Left Side - Company & Addresses */}
-        <div className="header-left-column">
-          {/* Company Details */}
-          <div className="company-box">
-            <p className="company-name-bold">{companyDetails.name}</p>
-            <p className="company-addr">{companyDetails.address}</p>
-            <p>GSTIN/UIN: {companyDetails.gstin}</p>
-            <p>State Name : {companyDetails.stateName}, Code : {companyDetails.stateCode}</p>
-            <p>E-Mail : {companyDetails.email}</p>
-          </div>
-
-          {/* Consignee (Ship to) and Buyer (Bill to) - Side by Side */}
-          <div className="address-row">
-            <div className="address-box-half">
-              <p className="address-label">Consignee (Ship to)</p>
-              <p className="customer-name-bold">{order.customerName}</p>
-              <p>{order.customerAddress || ''}</p>
-              {order.customerGSTIN && <p>GSTIN/UIN : {order.customerGSTIN}</p>}
-              <p>State Name : {companyDetails.stateName}, Code : {companyDetails.stateCode}</p>
-            </div>
-            <div className="address-box-half">
-              <p className="address-label">Buyer (Bill to)</p>
-              <p className="customer-name-bold">{order.customerName}</p>
-              <p>{order.customerAddress || ''}</p>
-              {order.customerGSTIN && <p>GSTIN/UIN : {order.customerGSTIN}</p>}
-              <p>State Name : {companyDetails.stateName}, Code : {companyDetails.stateCode}</p>
-            </div>
-          </div>
+      {/* Buyer / Consignee / Dispatch */}
+      <div className="inv-grid3">
+        <div>
+          <div className="inv-lbl">Buyer (Bill To)</div>
+          <div className="inv-party">{order.customerName}</div>
+          {order.customerAddress && <p>{order.customerAddress}</p>}
+          {order.customerGSTIN && <p>GSTIN/UIN: {order.customerGSTIN}</p>}
+          <p>State: {companyDetails.stateName}, Code {companyDetails.stateCode}</p>
         </div>
-
-        {/* Right Side - Invoice Details Grid */}
-        <div className="header-right-column">
-          <table className="invoice-details-table">
-            <tbody>
-              <tr>
-                <td className="detail-label">Order No.</td>
-                <td className="detail-value">{order.orderNumber}</td>
-                <td className="detail-label">Dated</td>
-                <td className="detail-value">{invoiceDate}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Mode/Terms of Payment</td>
-                <td className="detail-value">{deliveryDetails.paymentTerms}</td>
-              </tr>
-              <tr>
-                <td className="detail-label">Destination</td>
-                <td className="detail-value">{deliveryDetails.destination}</td>
-                <td className="detail-label">Vehicle No.</td>
-                <td className="detail-value">{deliveryDetails.vehicleNo}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div>
+          <div className="inv-lbl">Consignee (Ship To)</div>
+          <div className="inv-party">{order.customerName}</div>
+          {order.customerAddress && <p>{order.customerAddress}</p>}
+          {order.customerGSTIN && <p>GSTIN/UIN: {order.customerGSTIN}</p>}
+          <p>State: {companyDetails.stateName}, Code {companyDetails.stateCode}</p>
+        </div>
+        <div>
+          <div className="inv-lbl">Dispatch Details</div>
+          <div className="inv-meta">
+            <span>Mode/Terms</span><i>{deliveryDetails.paymentTerms}</i>
+            <span>Destination</span><i>{deliveryDetails.destination}</i>
+            <span>Vehicle No.</span><i>{deliveryDetails.vehicleNo}</i>
+          </div>
         </div>
       </div>
 
       {/* Items Table */}
-      <div className="invoice-items-section">
-        <table className="invoice-items-table">
+      <div className="inv-items-wrap">
+        <table className="inv-items">
           <thead>
             <tr>
-              <th className="col-sno">S.NO.</th>
-              <th className="col-item">ITEMS</th>
-              <th className="col-qty">TOTAL QTY.</th>
+              <th className="col-sno">S.No.</th>
+              <th className="col-item">Item Description</th>
               <th className="col-hsn">HSN</th>
-              <th className="col-batch">BATCH NO.</th>
-              <th className="col-exp">EXP. DATE</th>
-              <th className="col-mfg">MFG DATE</th>
-              <th className="col-rate">RATE</th>
-              <th className="col-amount">AMOUNT</th>
+              <th className="col-batch">Batch No.</th>
+              <th className="col-mfg">Mfg. Date</th>
+              <th className="col-exp">Exp. Date</th>
+              <th className="col-qty">Qty.</th>
+              <th className="col-rate">Rate</th>
+              <th className="col-amount">Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -249,18 +258,18 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
                   <td className="col-item">
                     {item.productName}
                     {isNotAvailable && (
-                      <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', background: '#dc3545', color: '#fff', borderRadius: '3px' }}>
+                      <span style={{ marginLeft: '6px', fontSize: '8px', padding: '1px 5px', background: '#dc3545', color: '#fff', borderRadius: '3px' }}>
                         N/A
                       </span>
                     )}
                   </td>
-                  <td className="col-qty">{item.quantity}</td>
                   <td className="col-hsn">{item.hsnCode || product?.sku || '-'}</td>
                   <td className="col-batch">{item.batchNo || '-'}</td>
-                  <td className="col-exp">{item.expDate || '-'}</td>
                   <td className="col-mfg">{item.mfgDate || '-'}</td>
-                  <td className="col-rate">{item.price}</td>
-                  <td className="col-amount">{item.total.toLocaleString()}</td>
+                  <td className="col-exp">{item.expDate || '-'}</td>
+                  <td className="col-qty">{item.quantity}</td>
+                  <td className="col-rate">₹{Number(item.price).toLocaleString()}</td>
+                  <td className="col-amount">₹{item.total.toLocaleString()}</td>
                 </tr>
               );
             })}
@@ -268,199 +277,110 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
         </table>
       </div>
 
-      {/* GST Summary */}
-      <div className="invoice-gst-section">
-        <div className="gst-rows">
-          <div className="gst-row">
-            <span className="gst-label">CGST @{cgstRate}%</span>
-            <span className="gst-dash">-</span>
-            <span className="gst-dash">-</span>
-            <span className="gst-value">₹ {totalCGST.toFixed(2)}</span>
-          </div>
-          <div className="gst-row">
-            <span className="gst-label">SGST @{sgstRate}%</span>
-            <span className="gst-dash">-</span>
-            <span className="gst-dash">-</span>
-            <span className="gst-value">₹ {totalSGST.toFixed(2)}</span>
-          </div>
-          <div className="gst-row total-row">
-            <span className="gst-label"><strong>TOTAL</strong></span>
-            <span></span>
-            <span className="total-qty"><strong>{order.items.reduce((sum, item) => sum + item.quantity, 0)}</strong></span>
-            <span className="gst-value total-amount"><strong>₹ {order.finalAmount.toLocaleString()}</strong></span>
-          </div>
-        </div>
-        {/* Salesman Info & Location */}
-        <div style={{ marginTop: '8px', padding: '8px 12px', background: '#f0f4f8', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-          <span style={{ fontSize: '12px', color: '#4a5568' }}>Order Created By: <strong style={{ color: '#2d3748' }}>{salesman?.name || 'N/A'}</strong></span>
+      {/* Words + Summary */}
+      <div className="inv-row2">
+        <div className="inv-words">
+          <div className="lbl">Total Amount (in words)</div>
+          <div className="w">{numberToWords(order.finalAmount)}</div>
           {order.orderLocation && (
-            <a
-              href={`https://www.google.com/maps/search/${encodeURIComponent(order.orderLocation)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ fontSize: '11px', color: '#1565c0', textDecoration: 'underline', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              📍 {order.orderLocation}
-            </a>
+            <div className="created-by">
+              <a
+                href={`https://www.google.com/maps/search/${encodeURIComponent(order.orderLocation)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                📍 {order.orderLocation}
+              </a>
+            </div>
           )}
         </div>
+        <div className="inv-sum">
+          <div><span>Taxable Value</span><b>₹{totalTaxableValue.toFixed(2)}</b></div>
+          <div><span>CGST @{cgstRate}%</span><b>₹{totalCGST.toFixed(2)}</b></div>
+          <div><span>SGST @{sgstRate}%</span><b>₹{totalSGST.toFixed(2)}</b></div>
+          <div className="tot"><span>Grand Total ({totalQty} Qty)</span><b>₹{order.finalAmount.toLocaleString()}</b></div>
+          <div><span>Amount Paid</span><b>₹{(order.amountPaid || 0).toLocaleString()}</b></div>
+          <div className={isAdvance ? 'paid-ok' : balance > 0 ? 'due' : 'paid-ok'}>
+            <span>{isAdvance ? 'Advance' : balance > 0 ? 'Balance Due' : 'Fully Paid'}</span>
+            <b>₹{balance.toLocaleString()}</b>
+          </div>
+        </div>
+      </div>
+
+      <div className="inv-payment-status">
+        <span style={{ fontSize: '9.5px', color: 'var(--mute)' }}>Payment Status</span>
+        <span className="tag" style={{ background: paymentTagColors.bg, color: paymentTagColors.fg }}>
+          {order.paymentStatus === 'paid' ? 'Fully Paid' : order.paymentStatus === 'partial' ? 'Partial Payment' : 'Unpaid'}
+        </span>
       </div>
 
       {/* HSN Summary Table */}
-      <div className="invoice-hsn-section">
-        <table className="hsn-table">
-          <thead>
-            <tr>
-              <th>HSN/SAC</th>
-              <th>Taxable Value</th>
-              <th colSpan={2}>CGST</th>
-              <th colSpan={2}>SGST</th>
-              <th>Total Tax Amount</th>
+      <table className="inv-hsn">
+        <thead>
+          <tr>
+            <th>HSN/SAC</th>
+            <th>Taxable Value</th>
+            <th colSpan={2}>CGST</th>
+            <th colSpan={2}>SGST</th>
+            <th>Total Tax</th>
+          </tr>
+          <tr>
+            <th></th>
+            <th></th>
+            <th>Rate</th>
+            <th>Amount</th>
+            <th>Rate</th>
+            <th>Amount</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(hsnSummary).map(([hsn, data]) => (
+            <tr key={hsn}>
+              <td>{hsn}</td>
+              <td>{data.taxableValue.toFixed(2)}</td>
+              <td>{cgstRate}%</td>
+              <td>{data.cgst.toFixed(2)}</td>
+              <td>{sgstRate}%</td>
+              <td>{data.sgst.toFixed(2)}</td>
+              <td>₹{data.total.toFixed(2)}</td>
             </tr>
-            <tr className="sub-header">
-              <th></th>
-              <th></th>
-              <th>Rate</th>
-              <th>Amount</th>
-              <th>Rate</th>
-              <th>Amount</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(hsnSummary).map(([hsn, data]) => (
-              <tr key={hsn}>
-                <td>{hsn}</td>
-                <td>{data.taxableValue.toFixed(2)}</td>
-                <td>{cgstRate}%</td>
-                <td>{data.cgst.toFixed(2)}</td>
-                <td>{sgstRate}%</td>
-                <td>{data.sgst.toFixed(2)}</td>
-                <td>₹ {data.total.toFixed(2)}</td>
-              </tr>
-            ))}
-            <tr className="hsn-total-row">
-              <td><strong>Total</strong></td>
-              <td><strong>{totalTaxableValue.toFixed(2)}</strong></td>
-              <td></td>
-              <td><strong>{totalCGST.toFixed(2)}</strong></td>
-              <td></td>
-              <td><strong>{totalSGST.toFixed(2)}</strong></td>
-              <td><strong>₹ {(totalCGST + totalSGST).toFixed(2)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+          ))}
+          <tr className="hsn-total">
+            <td>Total</td>
+            <td>{totalTaxableValue.toFixed(2)}</td>
+            <td></td>
+            <td>{totalCGST.toFixed(2)}</td>
+            <td></td>
+            <td>{totalSGST.toFixed(2)}</td>
+            <td>₹{(totalCGST + totalSGST).toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
 
-      {/* Payment Details */}
-      <div className="invoice-payment-section" style={{ margin: '12px 0', padding: '12px', background: '#f8f9fa', borderRadius: '4px', border: '1px solid #dee2e6' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <h4 style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: '#495057' }}>Payment Summary</h4>
-            <table style={{ fontSize: '12px', width: '100%' }}>
-              <tbody>
-                <tr>
-                  <td style={{ padding: '4px 0', color: '#6c757d' }}>Total Amount:</td>
-                  <td style={{ padding: '4px 0', textAlign: 'right', fontWeight: '600' }}>₹{order.finalAmount.toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '4px 0', color: '#6c757d' }}>Amount Paid:</td>
-                  <td style={{ padding: '4px 0', textAlign: 'right', fontWeight: '600', color: '#28a745' }}>₹{(order.amountPaid || 0).toLocaleString()}</td>
-                </tr>
-                <tr style={{ borderTop: '1px solid #dee2e6' }}>
-                  <td style={{ padding: '6px 0', fontWeight: '600', color: (order.amountPaid || 0) >= order.finalAmount ? '#007bff' : '#dc3545' }}>
-                    {(order.amountPaid || 0) >= order.finalAmount ? 'Advance:' : 'Balance Due:'}
-                  </td>
-                  <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: '700', fontSize: '14px', color: (order.amountPaid || 0) >= order.finalAmount ? '#007bff' : '#dc3545' }}>
-                    ₹{Math.abs(order.finalAmount - (order.amountPaid || 0)).toLocaleString()}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              padding: '8px 16px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              fontWeight: '600',
-              background: order.paymentStatus === 'paid' ? '#d4edda' :
-                         order.paymentStatus === 'partial' ? '#fff3cd' : '#f8d7da',
-              color: order.paymentStatus === 'paid' ? '#155724' :
-                     order.paymentStatus === 'partial' ? '#856404' : '#721c24',
-              textTransform: 'uppercase'
-            }}>
-              {order.paymentStatus === 'paid' ? 'FULLY PAID' :
-               order.paymentStatus === 'partial' ? 'PARTIAL PAYMENT' : 'UNPAID'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Amount in Words */}
-      <div className="invoice-amount-words">
-        <h4>Total Amount (in words)</h4>
-        <p>{numberToWords(order.finalAmount)}</p>
-      </div>
-
-      {/* Footer Section */}
-      <div className="invoice-footer-section">
-        <div className="bank-details">
+      {/* Bank + UPI */}
+      <div className="inv-pay">
+        <div className="inv-box">
           <h4>Bank Details</h4>
-          <table className="bank-table">
-            <tbody>
-              <tr>
-                <td>Name:</td>
-                <td>{bankDetails.name}</td>
-              </tr>
-              <tr>
-                <td>IFSC Code:</td>
-                <td>{bankDetails.ifscCode}</td>
-              </tr>
-              <tr>
-                <td>Account No:</td>
-                <td>{bankDetails.accountNo}</td>
-              </tr>
-              <tr>
-                <td>Bank:</td>
-                <td>{bankDetails.bank}, {bankDetails.branch}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="inv-bank">
+            <span>Account Name</span><b>{bankDetails.name}</b>
+            <span>Bank</span><b>{bankDetails.bank}, {bankDetails.branch}</b>
+            <span>Account No.</span><b>{bankDetails.accountNo}</b>
+            <span>IFSC Code</span><b>{bankDetails.ifscCode}</b>
+          </div>
         </div>
-        <div className="payment-qr-box">
-          <div className="payment-qr-content">
-            <div className="payment-qr-info">
-              <h4 className="payment-title">Payment QR Code</h4>
-              <p className="upi-label">UPI ID:</p>
-              <p className="upi-value">{bankDetails.upiId}</p>
-              <div className="payment-apps">
-                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%235f259f'/%3E%3Cpath d='M9 6h2.5l4 6-4 6H9l4-6-4-6z' fill='white'/%3E%3C/svg%3E" alt="PhonePe" className="payment-app-icon" />
-                <span className="app-label phonepe">PhonePe</span>
-                <svg className="payment-app-icon gpay-icon" viewBox="0 0 46 46">
-                  <path fill="#4285F4" d="M23 0C10.3 0 0 10.3 0 23s10.3 23 23 23 23-10.3 23-23S35.7 0 23 0z"/>
-                  <path fill="#fff" d="M33 23.5c0-.8-.1-1.6-.2-2.3H23v4.4h5.6c-.2 1.2-.9 2.3-1.9 3v2.5h3.1c1.8-1.7 2.9-4.2 2.9-7.6z"/>
-                  <path fill="#fff" d="M23 35c2.6 0 4.8-.9 6.4-2.4l-3.1-2.5c-.9.6-2 .9-3.3.9-2.6 0-4.7-1.7-5.5-4.1h-3.2v2.6c1.6 3.2 5 5.5 8.7 5.5z"/>
-                  <path fill="#fff" d="M17.5 26.9c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2v-2.6h-3.2c-.7 1.3-1.1 2.8-1.1 4.4s.4 3.1 1.1 4.4l3.2-2.2z"/>
-                  <path fill="#fff" d="M23 17.7c1.5 0 2.8.5 3.8 1.5l2.8-2.8c-1.7-1.6-4-2.6-6.6-2.6-3.7 0-7.1 2.1-8.7 5.3l3.2 2.5c.8-2.4 2.9-4 5.5-4z"/>
-                </svg>
-                <span className="app-label gpay">G Pay</span>
-                <svg className="payment-app-icon paytm-icon" viewBox="0 0 50 20">
-                  <rect fill="#00BAF2" width="50" height="20" rx="3"/>
-                  <text x="5" y="14" fill="white" fontSize="10" fontWeight="bold" fontFamily="Arial">pay</text>
-                  <text x="24" y="14" fill="#002970" fontSize="10" fontWeight="bold" fontFamily="Arial">tm</text>
-                </svg>
-                <svg className="payment-app-icon upi-icon" viewBox="0 0 50 20">
-                  <rect fill="#fff" width="50" height="20" rx="2" stroke="#097969" strokeWidth="1"/>
-                  <text x="8" y="14" fill="#097969" fontSize="11" fontWeight="bold" fontFamily="Arial">UPI</text>
-                  <path d="M38 5l6 5-6 5" fill="none" stroke="#f7931a" strokeWidth="2"/>
-                </svg>
-              </div>
+        <div className="inv-box">
+          <h4>Scan &amp; Pay (UPI)</h4>
+          <div className="inv-upi">
+            <div>
+              <div style={{ fontSize: '9.5px', color: '#5f6b63' }}>UPI ID</div>
+              <div className="inv-upi-id">{bankDetails.upiId}</div>
+              <UpiAppIcons />
             </div>
-            <div className="payment-qr-code">
+            <div className="inv-upi-qr">
               <QRCodeSVG
                 value={`upi://pay?pa=${bankDetails.upiId}&pn=${encodeURIComponent(bankDetails.name)}&cu=INR`}
-                size={95}
+                size={90}
                 level="H"
                 includeMargin={false}
                 bgColor="#ffffff"
@@ -471,29 +391,29 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
         </div>
       </div>
 
-      {/* Terms and Signature */}
-      <div className="invoice-terms-section">
-        <div className="terms">
-          <h4>Terms And Condition</h4>
+      {/* Terms + Signature */}
+      <div className="inv-foot">
+        <div className="inv-box inv-terms">
+          <h4>Terms &amp; Conditions</h4>
           <ol>
-            <li>10% Discount On The Standard Billing</li>
-            <li>6% Discount On Cash And Advance Payment</li>
-            <li>Addition 2% Discount On Advance Payment</li>
-            <li>Rs 4000 Per Ton Discount If Annual Billing Exceeds 1000kg</li>
-            <li>Goods Ones Sold Will Not Be Taken Returned</li>
-            <li>Credit Period Minimum 15 Days</li>
-            <li>Company Reserve The Right To Change Above Price Without Any Prior Notice.</li>
+            <li>10% discount on the standard billing.</li>
+            <li>6% discount on cash and advance payment.</li>
+            <li>Additional 2% discount on advance payment.</li>
+            <li>Rs. 4000 per ton discount if annual billing exceeds 1000kg.</li>
+            <li>Goods once sold will not be taken back.</li>
+            <li>Credit period minimum 15 days.</li>
+            <li>Company reserves the right to change the above price without any prior notice.</li>
           </ol>
         </div>
-        <div className="signature">
-          <p>Authorised Signatory For</p>
-          <p><strong>{companyDetails.name}</strong></p>
+        <div className="inv-box inv-sign">
+          <h4>For {companyDetails.name}</h4>
+          <div className="sign-line">Authorised Signatory</div>
         </div>
       </div>
 
-      {/* Machine Generated Note */}
-      <div className="invoice-machine-note">
-        <p>This is a machine-generated bill. Please verify the details before leaving.</p>
+      <div className="inv-note">
+        <span>Order created by: <strong>{salesman?.name || 'N/A'}</strong></span>
+        <span>This is a computer-generated invoice. Please verify the details before leaving.</span>
       </div>
     </div>
   );

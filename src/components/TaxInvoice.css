@@ -1,536 +1,507 @@
-/* Tax Invoice - Professional Pvt Ltd Company Bill */
+/* Tax Invoice / Purchase Invoice — green professional design */
 .tax-invoice {
+  --g: #2E7D32;
+  --g2: #1F5E24;
+  --tint: #F1F8F2;
+  --tint2: #E3F1E5;
+  --line: #CFE2D2;
+  --ink: #1d2420;
+  --mute: #5f6b63;
+  --due: #C0392B;
+
   width: 190mm;
   max-width: 190mm;
-  padding: 0;
-  margin: 0 auto;
-  background: white;
-  font-family: Arial, sans-serif;
-  font-size: 10px;
-  color: #000;
+  margin: 10px auto;
+  padding: 9mm 9mm 8mm;
+  background: #fff;
+  font-family: Arial, 'Carlito', 'DejaVu Sans', sans-serif;
+  font-size: 11px;
+  color: var(--ink);
   box-sizing: border-box;
-  border: 2px solid #000;
-}
-
-/* Header Title */
-.invoice-header-title {
-  text-align: center;
-  padding: 6px 0;
-  border-bottom: 2px solid #000;
-  background: #f8f8f8;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.invoice-header-title h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-/* Main Header Section */
-.invoice-header-section {
-  display: flex;
-  align-items: stretch;
-  border-bottom: 2px solid #000;
-}
-
-.header-left-column {
-  flex: 1.2;
-  border-right: 2px solid #000;
-}
-
-.header-right-column {
-  flex: 0.8;
   display: flex;
   flex-direction: column;
+  gap: 9px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.15);
 }
 
-/* Company Box */
-.company-box {
-  padding: 6px 10px;
-  border-bottom: 1px solid #000;
+.tax-invoice * {
+  box-sizing: border-box;
 }
 
-.company-box p {
-  margin: 1px 0;
-  font-size: 9px;
-  line-height: 1.3;
+.tax-invoice table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
-.company-name-bold {
-  font-weight: bold;
-  font-size: 12px !important;
-  text-transform: uppercase;
+/* ---------- Header ---------- */
+.tax-invoice .inv-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 9px;
+  border-bottom: 2px solid var(--g);
 }
 
-.company-addr {
+.tax-invoice .inv-co {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.tax-invoice .inv-co img {
+  width: 100px;
+  height: auto;
+  object-fit: contain;
+  margin-top: 2px;
+}
+
+.tax-invoice .inv-co-text h1 {
+  margin: 0 0 3px;
+  font-size: 18px;
+  letter-spacing: .3px;
+  color: var(--g2);
+}
+
+.tax-invoice .inv-co-text p {
+  margin: 0;
+  line-height: 1.38;
+  color: #333;
+  font-size: 9.5px;
   white-space: pre-line;
 }
 
-/* Address Row - Side by Side */
-.address-row {
-  display: flex;
+.tax-invoice .inv-co-text .meta-line {
+  margin-top: 2px;
 }
 
-.address-box-half {
-  flex: 1;
-  padding: 5px 8px;
-  border-right: 1px solid #000;
-}
-
-.address-box-half:last-child {
-  border-right: none;
-}
-
-.address-box-half p {
-  margin: 1px 0;
-  font-size: 9px;
-  line-height: 1.3;
-}
-
-.address-label {
-  font-size: 8px !important;
-  font-weight: bold;
-  text-transform: uppercase;
-  color: #333;
-  border-bottom: 1px solid #999;
-  padding-bottom: 2px;
-  margin-bottom: 3px !important;
-}
-
-.customer-name-bold {
-  font-weight: bold;
-  font-size: 10px !important;
-}
-
-/* Invoice Details Table */
-.invoice-details-table {
-  width: 100%;
-  height: 100%;
-  border-collapse: collapse;
-}
-
-.invoice-details-table td {
-  padding: 3px 6px;
-  border: 1px solid #000;
-  font-size: 9px;
-  vertical-align: middle;
-  line-height: 1.3;
-}
-
-.invoice-details-table .detail-label {
-  background: #f0f0f0;
-  font-size: 8px;
-  font-weight: bold;
-  color: #333;
-  width: 40%;
-  white-space: nowrap;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.invoice-details-table .detail-value {
-  font-weight: bold;
-  width: 60%;
-}
-
-/* Items Table */
-.invoice-items-section {
-  margin: 0;
-}
-
-.invoice-items-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 9px;
-}
-
-.invoice-items-table th {
-  background: #1b5e20;
-  color: white;
-  padding: 6px 4px;
-  text-align: center;
-  font-weight: bold;
-  border: 1px solid #1b5e20;
-  font-size: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-/* Column widths - maximized for product name */
-.invoice-items-table .col-sno { width: 4%; text-align: center; }
-.invoice-items-table .col-item { width: 28%; text-align: left; }
-.invoice-items-table .col-hsn { width: 9%; text-align: center; }
-.invoice-items-table .col-batch { width: 9%; text-align: center; }
-.invoice-items-table .col-exp { width: 9%; text-align: center; }
-.invoice-items-table .col-mfg { width: 9%; text-align: center; }
-.invoice-items-table .col-qty { width: 6%; text-align: center; }
-.invoice-items-table .col-rate { width: 10%; text-align: right; }
-.invoice-items-table .col-amount { width: 12%; text-align: right; }
-
-.invoice-items-table td {
-  padding: 5px 4px;
-  border: 1px solid #000;
-  vertical-align: middle;
-  font-size: 9px;
-}
-
-.invoice-items-table td.col-sno { text-align: center; }
-.invoice-items-table td.col-item { text-align: left; padding-left: 6px; font-weight: 500; }
-.invoice-items-table td.col-hsn { text-align: center; }
-.invoice-items-table td.col-batch { text-align: center; }
-.invoice-items-table td.col-exp { text-align: center; }
-.invoice-items-table td.col-mfg { text-align: center; }
-.invoice-items-table td.col-qty { text-align: center; font-weight: 600; }
-.invoice-items-table td.col-rate { text-align: right; padding-right: 6px; }
-.invoice-items-table td.col-amount { text-align: right; padding-right: 6px; font-weight: 600; }
-
-.invoice-items-table tbody tr:nth-child(even) {
-  background: #fafafa;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-/* GST Section */
-.invoice-gst-section {
-  border-top: 2px solid #000;
-}
-
-.gst-rows {
-  width: 100%;
-}
-
-.gst-row {
-  display: flex;
-  padding: 4px 12px;
-  border-bottom: 1px solid #000;
-  align-items: center;
-  font-size: 10px;
-}
-
-.gst-row:last-child {
-  border-bottom: none;
-}
-
-.gst-label {
-  flex: 1;
-  font-style: italic;
-}
-
-.gst-dash {
-  width: 50px;
-  text-align: center;
-}
-
-.gst-value {
-  width: 120px;
+.tax-invoice .inv-title-box {
   text-align: right;
-  font-weight: 500;
+  min-width: 185px;
+  flex-shrink: 0;
 }
 
-.total-row {
-  background: #e8f5e9;
-  font-weight: bold;
-  border-top: 2px solid #000 !important;
-  border-bottom: 2px solid #000 !important;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.total-row .gst-label {
-  font-style: normal;
-  font-size: 11px;
-}
-
-.total-qty {
-  width: 50px;
-  text-align: center;
-}
-
-.total-amount {
-  font-size: 12px;
-  color: #1b5e20;
-}
-
-/* HSN Summary Table */
-.invoice-hsn-section {
-  margin: 0;
-  border-top: 2px solid #000;
-}
-
-.hsn-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 9px;
-}
-
-.hsn-table th {
-  background: #1b5e20;
-  color: white;
-  padding: 5px 6px;
-  text-align: center;
-  border: 1px solid #1b5e20;
-  font-size: 8px;
-  font-weight: bold;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.hsn-table .sub-header th {
-  background: #c8e6c9;
-  color: #000;
-  font-weight: 600;
-  padding: 3px 6px;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.hsn-table td {
-  padding: 4px 6px;
-  border: 1px solid #000;
-  text-align: center;
-  font-size: 9px;
-}
-
-.hsn-total-row {
-  background: #e8f5e9;
-  font-weight: bold;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.hsn-total-row td:last-child {
-  color: #1b5e20;
-}
-
-/* Amount in Words */
-.invoice-amount-words {
-  border-top: 2px solid #000;
-  padding: 6px 12px;
-  background: #f1f8e9;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.invoice-amount-words h4 {
-  font-size: 8px;
-  margin: 0 0 2px 0;
-  color: #555;
-  font-weight: bold;
+.tax-invoice .inv-title-box .t {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--g);
   text-transform: uppercase;
 }
 
-.invoice-amount-words p {
-  font-size: 10px;
-  margin: 0;
-  font-weight: bold;
-  color: #1b5e20;
-}
-
-/* Footer Section */
-.invoice-footer-section {
-  display: flex;
-  border-top: 2px solid #000;
-}
-
-.bank-details {
-  flex: 1;
-  padding: 8px 12px;
-  border-right: 2px solid #000;
-}
-
-.bank-details h4 {
-  font-size: 10px;
-  margin: 0 0 5px 0;
-  color: #1b5e20;
-  font-weight: bold;
-  text-transform: uppercase;
-}
-
-.bank-table {
+.tax-invoice .inv-title-box .o {
   font-size: 9px;
+  color: var(--mute);
+  letter-spacing: .5px;
+  margin-bottom: 6px;
 }
 
-.bank-table td {
-  padding: 2px 4px 2px 0;
+.tax-invoice .inv-title-box .status-badge {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 20px;
+  margin-bottom: 6px;
+  letter-spacing: .3px;
 }
 
-.bank-table td:first-child {
-  color: #555;
-  font-weight: 600;
-  width: 75px;
+.tax-invoice .inv-kv {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--tint);
+  padding: 6px 10px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px 14px;
+  text-align: left;
 }
 
-/* Payment QR Box */
-.payment-qr-box {
-  flex: 1.2;
-  padding: 6px;
+.tax-invoice .inv-kv span {
+  color: var(--mute);
+  font-size: 9.5px;
 }
 
-.payment-qr-content {
-  display: flex;
-  border: 2px solid #000;
-  border-radius: 4px;
-  height: 100%;
+.tax-invoice .inv-kv b {
+  text-align: right;
+  font-size: 10.5px;
+}
+
+/* ---------- Buyer / Consignee / Dispatch 3-col grid ---------- */
+.tax-invoice .inv-grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.05fr;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   overflow: hidden;
 }
 
-.payment-qr-info {
-  flex: 1;
-  padding: 6px 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.tax-invoice .inv-grid3 > div {
+  padding: 7px 10px;
 }
 
-.payment-title {
-  font-size: 11px;
-  font-weight: bold;
-  color: #000;
-  margin: 0 0 4px 0;
+.tax-invoice .inv-grid3 > div + div {
+  border-left: 1px solid var(--line);
 }
 
-.upi-label {
+.tax-invoice .inv-lbl {
   font-size: 9px;
-  color: #000;
-  margin: 0;
+  font-weight: 700;
+  letter-spacing: .7px;
+  color: var(--g);
+  text-transform: uppercase;
+  margin-bottom: 4px;
 }
 
-.upi-value {
-  font-size: 10px;
-  font-weight: 600;
-  color: #000;
-  margin: 0 0 6px 0;
+.tax-invoice .inv-party {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
-.payment-apps {
+.tax-invoice .inv-grid3 p {
+  margin: 0 0 1px;
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: #333;
+}
+
+.tax-invoice .inv-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  font-size: 9.5px;
+}
+
+.tax-invoice .inv-meta span {
+  color: var(--mute);
+}
+
+.tax-invoice .inv-meta i {
+  font-style: normal;
+  border-bottom: 1px dotted #b9c9bc;
+  min-height: 12px;
+  display: block;
+}
+
+/* ---------- Items table ---------- */
+.tax-invoice .inv-items-wrap {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tax-invoice .inv-items th {
+  background: var(--tint2);
+  color: var(--g2);
+  font-size: 9.5px;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 7px 5px;
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.tax-invoice .inv-items td {
+  padding: 7px 5px;
+  border: 1px solid var(--line);
+  vertical-align: middle;
+  font-size: 9.5px;
+}
+
+.tax-invoice .inv-items .col-sno { width: 4%; text-align: center; }
+.tax-invoice .inv-items .col-item { width: 23%; text-align: left; padding-left: 7px; font-weight: 600; }
+.tax-invoice .inv-items .col-qty { width: 7%; text-align: center; font-weight: 700; }
+.tax-invoice .inv-items .col-hsn { width: 9%; text-align: center; }
+.tax-invoice .inv-items .col-batch { width: 10%; text-align: center; }
+.tax-invoice .inv-items .col-exp { width: 9%; text-align: center; }
+.tax-invoice .inv-items .col-mfg { width: 9%; text-align: center; }
+.tax-invoice .inv-items .col-rate { width: 10%; text-align: right; padding-right: 7px; }
+.tax-invoice .inv-items .col-amount { width: 12%; text-align: right; padding-right: 7px; font-weight: 700; }
+
+.tax-invoice .inv-items tbody tr:nth-child(even) {
+  background: var(--tint);
+}
+
+/* ---------- Words + summary row ---------- */
+.tax-invoice .inv-row2 {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  gap: 10px;
+  align-items: start;
+}
+
+.tax-invoice .inv-words {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--tint);
+}
+
+.tax-invoice .inv-words .lbl {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  color: var(--g);
+  text-transform: uppercase;
+}
+
+.tax-invoice .inv-words .w {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--g2);
+  margin-top: 2px;
+}
+
+.tax-invoice .inv-words .created-by {
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--mute);
+}
+
+.tax-invoice .inv-words .created-by a {
+  color: #1565c0;
+  text-decoration: underline;
+}
+
+.tax-invoice .inv-sum {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tax-invoice .inv-sum > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 10px;
+  font-size: 10.5px;
+}
+
+.tax-invoice .inv-sum > div + div {
+  border-top: 1px solid var(--line);
+}
+
+.tax-invoice .inv-sum span {
+  color: var(--mute);
+}
+
+.tax-invoice .inv-sum .tot {
+  background: var(--tint2);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--g2);
+}
+
+.tax-invoice .inv-sum .tot span {
+  color: inherit;
+}
+
+.tax-invoice .inv-sum .due {
+  color: var(--due);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.tax-invoice .inv-sum .due span {
+  color: inherit;
+}
+
+.tax-invoice .inv-sum .paid-ok {
+  color: #1b5e20;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.tax-invoice .inv-sum .paid-ok span {
+  color: inherit;
+}
+
+/* ---------- HSN summary table ---------- */
+.tax-invoice .inv-hsn th {
+  background: var(--tint);
+  color: var(--g2);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+}
+
+.tax-invoice .inv-hsn td {
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  text-align: center;
+  font-size: 9.5px;
+}
+
+.tax-invoice .inv-hsn tr.hsn-total td {
+  font-weight: 700;
+  background: var(--tint);
+}
+
+.tax-invoice .inv-hsn tr.hsn-total td:last-child {
+  color: var(--g2);
+}
+
+/* ---------- Bank + UPI ---------- */
+.tax-invoice .inv-pay {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tax-invoice .inv-box {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 11px;
+}
+
+.tax-invoice .inv-box h4 {
+  font-size: 9.5px;
+  margin: 0 0 6px;
+  color: var(--g);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.tax-invoice .inv-bank {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 3px 8px;
+  font-size: 9.5px;
+}
+
+.tax-invoice .inv-bank span {
+  color: var(--mute);
+}
+
+.tax-invoice .inv-upi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.tax-invoice .inv-upi-id {
+  font-size: 12.5px;
+  font-weight: 700;
+  margin: 2px 0 6px;
+  word-break: break-all;
+}
+
+.tax-invoice .inv-upi-apps {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-wrap: wrap;
 }
 
-.payment-app-icon {
-  width: 14px;
-  height: 14px;
+.tax-invoice .inv-upi-app-icon {
+  width: 13px;
+  height: 13px;
   vertical-align: middle;
 }
 
-.gpay-icon {
-  width: 16px;
-  height: 16px;
+.tax-invoice .inv-upi-app-icon.gpay {
+  width: 15px;
+  height: 15px;
 }
 
-.paytm-icon {
-  width: 32px;
-  height: 12px;
+.tax-invoice .inv-upi-app-icon.paytm,
+.tax-invoice .inv-upi-app-icon.upi {
+  width: 30px;
+  height: 11px;
 }
 
-.upi-icon {
-  width: 32px;
-  height: 12px;
-}
-
-.app-label {
+.tax-invoice .inv-upi-app-label {
   font-size: 7px;
   font-weight: 600;
   margin-right: 3px;
 }
 
-.app-label.phonepe {
-  color: #5f259f;
-}
+.tax-invoice .inv-upi-app-label.phonepe { color: #5f259f; }
+.tax-invoice .inv-upi-app-label.gpay { color: #4285F4; }
 
-.app-label.gpay {
-  color: #4285F4;
-}
-
-.payment-qr-code {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.tax-invoice .inv-upi-qr {
+  flex-shrink: 0;
   padding: 4px;
   background: #fff;
-  border-left: 1px solid #ddd;
+  border: 1px solid var(--line);
+  border-radius: 4px;
 }
 
-.payment-qr-code svg {
+.tax-invoice .inv-upi-qr svg {
   display: block;
 }
 
-/* Terms Section */
-.invoice-terms-section {
-  display: flex;
-  border-top: 2px solid #000;
+/* ---------- Terms + signature ---------- */
+.tax-invoice .inv-foot {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 10px;
 }
 
-.terms {
-  flex: 1.5;
-  padding: 6px 12px;
-  border-right: 2px solid #000;
+.tax-invoice .inv-terms ol {
+  margin: 2px 0 0;
+  padding-left: 15px;
+  line-height: 1.42;
+  font-size: 8.5px;
 }
 
-.terms h4 {
-  font-size: 9px;
-  margin: 0 0 4px 0;
-  font-weight: bold;
-  text-transform: uppercase;
-}
-
-.terms ol {
-  margin: 0;
-  padding-left: 14px;
-  font-size: 8px;
-  line-height: 1.5;
-}
-
-.terms li {
+.tax-invoice .inv-terms li {
   margin-bottom: 1px;
 }
 
-.signature {
-  flex: 1;
-  padding: 8px 12px;
-  text-align: right;
+.tax-invoice .inv-sign {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: space-between;
+  text-align: right;
 }
 
-.signature p {
-  margin: 0;
+.tax-invoice .inv-sign .sign-line {
+  border-top: 1px solid #9fb3a3;
+  margin-top: 40px;
+  padding-top: 4px;
+  color: var(--mute);
   font-size: 9px;
 }
 
-.signature p:last-child {
-  margin-top: 2px;
-  font-weight: bold;
+/* ---------- Payment status block (Purchase Invoice) ---------- */
+.tax-invoice .inv-payment-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--tint);
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
-/* Machine Generated Note */
-.invoice-machine-note {
-  margin: 0;
-  padding: 6px 12px;
-  background: #f5f5f5;
-  border-top: 1px solid #000;
-  text-align: center;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+.tax-invoice .inv-payment-status .tag {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .3px;
 }
 
-.invoice-machine-note p {
-  margin: 0;
+/* ---------- Footer note ---------- */
+.tax-invoice .inv-note {
+  display: flex;
+  justify-content: space-between;
+  color: var(--mute);
   font-size: 9px;
-  font-style: italic;
-  color: #555;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
 }
 
-/* Print Styles */
+/* Print */
 @media print {
   * {
     -webkit-print-color-adjust: exact !important;
@@ -573,125 +544,20 @@
   }
 
   .tax-invoice {
-    display: block !important;
+    display: flex !important;
     visibility: visible !important;
     position: relative !important;
     width: 190mm !important;
     max-width: 190mm !important;
     min-height: auto !important;
-    padding: 0 !important;
     margin: 0 !important;
     box-shadow: none !important;
     background: white !important;
-    border: 2px solid #000 !important;
-    page-break-inside: avoid !important;
-  }
-
-  .invoice-header-title {
-    background: #f8f8f8 !important;
-    border-bottom: 2px solid #000 !important;
-  }
-
-  .invoice-header-section {
-    display: flex !important;
-    border-bottom: 2px solid #000 !important;
-  }
-
-  .header-left-column {
-    border-right: 2px solid #000 !important;
-  }
-
-  .company-box {
-    border-bottom: 1px solid #000 !important;
-  }
-
-  .invoice-details-table td {
-    border: 1px solid #000 !important;
-  }
-
-  .invoice-details-table .detail-label {
-    background-color: #f0f0f0 !important;
-  }
-
-  .invoice-items-table th {
-    background-color: #1b5e20 !important;
-    color: white !important;
-    border: 1px solid #1b5e20 !important;
-  }
-
-  .invoice-items-table td {
-    border: 1px solid #000 !important;
-  }
-
-  .invoice-items-table tbody tr:nth-child(even) {
-    background-color: #fafafa !important;
-  }
-
-  .total-row {
-    background-color: #e8f5e9 !important;
-  }
-
-  .hsn-table th {
-    background-color: #1b5e20 !important;
-    color: white !important;
-  }
-
-  .hsn-table .sub-header th {
-    background-color: #c8e6c9 !important;
-    color: #000 !important;
-  }
-
-  .hsn-total-row {
-    background-color: #e8f5e9 !important;
-  }
-
-  .invoice-amount-words {
-    background-color: #f1f8e9 !important;
-  }
-
-  .invoice-footer-section {
-    display: flex !important;
-    border-top: 2px solid #000 !important;
-  }
-
-  .bank-details {
-    border-right: 2px solid #000 !important;
-  }
-
-  .payment-qr-content {
-    display: flex !important;
-    border: 2px solid #000 !important;
-  }
-
-  .payment-qr-code svg {
-    width: 85px !important;
-    height: 85px !important;
-  }
-
-  .invoice-terms-section {
-    display: flex !important;
-    border-top: 2px solid #000 !important;
-  }
-
-  .terms {
-    border-right: 2px solid #000 !important;
-  }
-
-  .invoice-machine-note {
-    background: #f5f5f5 !important;
-    border-top: 1px solid #000 !important;
+    page-break-inside: avoid;
   }
 
   @page {
     size: A4 portrait;
     margin: 4mm;
-  }
-}
-
-/* Screen Preview */
-@media screen {
-  .tax-invoice {
-    box-shadow: 0 1px 8px rgba(0,0,0,0.15);
-    margin: 10px auto;
   }
 }
