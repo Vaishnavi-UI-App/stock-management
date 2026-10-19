@@ -318,6 +318,13 @@
   color: inherit;
 }
 
+.tax-invoice .inv-rate-note {
+  margin: -3px 0 0;
+  font-size: 8.5px;
+  font-style: italic;
+  color: var(--mute);
+}
+
 /* ---------- HSN summary table ---------- */
 .tax-invoice .inv-hsn th {
   background: var(--tint);

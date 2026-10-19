@@ -337,6 +337,8 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
         </span>
       </div>
 
+      <p className="inv-rate-note">* Rate is inclusive of GST. Total quantity: {totalQty}.</p>
+
       {/* HSN Summary Table */}
       <table className="inv-hsn">
         <thead>
