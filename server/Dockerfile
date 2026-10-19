@@ -43,4 +43,11 @@ RUN if [ -n "$INSECURE_TLS" ]; then export NODE_TLS_REJECT_UNAUTHORIZED=0; fi; \
     ./node_modules/.bin/prisma generate
 
 EXPOSE 3001
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push && npm start"]
+# `depends_on: condition: service_healthy` only orders startup when Compose
+# itself brings the stack up — when Docker's own `restart: always` policy
+# relaunches containers after a host reboot, each container starts
+# independently with no cross-container wait, so this can race the database
+# container and fail its first `prisma db push`. Retry for up to a minute
+# before giving up (restart: always remains the final fallback if the
+# database genuinely never comes up).
+CMD ["sh", "-c", "i=0; until ./node_modules/.bin/prisma db push; do i=$((i+1)); if [ $i -ge 30 ]; then echo 'Database still unreachable after 60s, giving up.'; exit 1; fi; echo 'Database not ready yet, retrying in 2s...'; sleep 2; done; npm start"]
