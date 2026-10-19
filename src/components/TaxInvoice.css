@@ -325,33 +325,6 @@
   color: var(--mute);
 }
 
-/* ---------- HSN summary table ---------- */
-.tax-invoice .inv-hsn th {
-  background: var(--tint);
-  color: var(--g2);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: .3px;
-  padding: 5px 6px;
-  border: 1px solid var(--line);
-}
-
-.tax-invoice .inv-hsn td {
-  padding: 5px 6px;
-  border: 1px solid var(--line);
-  text-align: center;
-  font-size: 9.5px;
-}
-
-.tax-invoice .inv-hsn tr.hsn-total td {
-  font-weight: 700;
-  background: var(--tint);
-}
-
-.tax-invoice .inv-hsn tr.hsn-total td:last-child {
-  color: var(--g2);
-}
-
 /* ---------- Bank + UPI ---------- */
 .tax-invoice .inv-pay {
   display: grid;

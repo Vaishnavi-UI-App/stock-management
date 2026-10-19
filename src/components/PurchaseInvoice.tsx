@@ -136,15 +136,11 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
     vehicleNo: order.vehicleNo || ''
   };
 
-  const hsnSummary: { [key: string]: { taxableValue: number; cgst: number; sgst: number; total: number } } = {};
   let totalTaxableValue = 0;
   let totalCGST = 0;
   let totalSGST = 0;
 
   order.items.forEach(item => {
-    const product = getProductById(item.productId);
-    const hsn = item.hsnCode || product?.sku || '';
-
     const taxableValue = (item.total * 100) / (100 + totalGstRate);
     const cgst = (taxableValue * cgstRate) / 100;
     const sgst = (taxableValue * sgstRate) / 100;
@@ -152,16 +148,6 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
     totalTaxableValue += taxableValue;
     totalCGST += cgst;
     totalSGST += sgst;
-
-    if (hsn) {
-      if (!hsnSummary[hsn]) {
-        hsnSummary[hsn] = { taxableValue: 0, cgst: 0, sgst: 0, total: 0 };
-      }
-      hsnSummary[hsn].taxableValue += taxableValue;
-      hsnSummary[hsn].cgst += cgst;
-      hsnSummary[hsn].sgst += sgst;
-      hsnSummary[hsn].total += cgst + sgst;
-    }
   });
 
   const invoiceDate = format(new Date(order.orderDate), 'dd-MMM-yyyy');
@@ -338,50 +324,6 @@ export const PurchaseInvoice = forwardRef<HTMLDivElement, PurchaseInvoiceProps>(
       </div>
 
       <p className="inv-rate-note">* Rate is inclusive of GST. Total quantity: {totalQty}.</p>
-
-      {/* HSN Summary Table */}
-      <table className="inv-hsn">
-        <thead>
-          <tr>
-            <th>HSN/SAC</th>
-            <th>Taxable Value</th>
-            <th colSpan={2}>CGST</th>
-            <th colSpan={2}>SGST</th>
-            <th>Total Tax</th>
-          </tr>
-          <tr>
-            <th></th>
-            <th></th>
-            <th>Rate</th>
-            <th>Amount</th>
-            <th>Rate</th>
-            <th>Amount</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(hsnSummary).map(([hsn, data]) => (
-            <tr key={hsn}>
-              <td>{hsn}</td>
-              <td>{data.taxableValue.toFixed(2)}</td>
-              <td>{cgstRate}%</td>
-              <td>{data.cgst.toFixed(2)}</td>
-              <td>{sgstRate}%</td>
-              <td>{data.sgst.toFixed(2)}</td>
-              <td>₹{data.total.toFixed(2)}</td>
-            </tr>
-          ))}
-          <tr className="hsn-total">
-            <td>Total</td>
-            <td>{totalTaxableValue.toFixed(2)}</td>
-            <td></td>
-            <td>{totalCGST.toFixed(2)}</td>
-            <td></td>
-            <td>{totalSGST.toFixed(2)}</td>
-            <td>₹{(totalCGST + totalSGST).toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>
 
       {/* Bank + UPI */}
       <div className="inv-pay">
