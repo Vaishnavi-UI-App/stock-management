@@ -133,8 +133,12 @@ export const useStore = create<AppState>()(
             isAuthenticated: true,
             isLoading: false
           });
-          // Fetch all data after login
-          await get().fetchAllData();
+          // Not fetchAllData() here — setting isAuthenticated above already
+          // triggers App.tsx's effect to do that (and refreshCurrentUser()).
+          // This used to also call it directly, so every login fired two
+          // full fetch cycles at once (confirmed: 14 near-simultaneous
+          // requests instead of 7) — harmless on a fast connection, but
+          // needless duplicate load on a slow one.
           return response.user;
         } catch (error: any) {
           set({ error: error.message, isLoading: false });
