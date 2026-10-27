@@ -419,6 +419,7 @@ model Sale {
   destination       String?
   poNumber          String?
   vehicleNo         String?
+  eInvoiceNo        String?
   billLocation      String?       @db.Text
   saleDate        DateTime      @default(now())
   dueDate         DateTime?

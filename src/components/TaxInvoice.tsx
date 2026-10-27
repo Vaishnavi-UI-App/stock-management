@@ -186,6 +186,7 @@ export const TaxInvoice = forwardRef<HTMLDivElement, TaxInvoiceProps>(({
           <div className="o">Original for Recipient</div>
           <div className="inv-kv">
             <span>Invoice No.</span><b>{sale.billNumber}</b>
+            {sale.eInvoiceNo && <><span>E-Invoice No.</span><b>{sale.eInvoiceNo}</b></>}
             <span>Date</span><b>{invoiceDate}</b>
           </div>
         </div>

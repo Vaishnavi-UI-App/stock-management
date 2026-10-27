@@ -16,7 +16,7 @@ export function MySales() {
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [editForm, setEditForm] = useState({
     customerName: '', customerPhone: '', customerEmail: '', customerAddress: '', customerGSTIN: '',
-    discount: 0, amountPaid: 0, modeOfPayment: '', destination: '', vehicleNo: ''
+    discount: 0, amountPaid: 0, modeOfPayment: '', destination: '', vehicleNo: '', eInvoiceNo: ''
   });
   const [editItems, setEditItems] = useState<Array<{ productId: string; productName: string; quantity: number; price: number; total: number; hsnCode?: string; unit?: string }>>([]);
   const [addItemProductId, setAddItemProductId] = useState('');
@@ -207,7 +207,8 @@ export function MySales() {
       amountPaid: sale.amountPaid || 0,
       modeOfPayment: sale.modeOfPayment || '',
       destination: sale.destination || '',
-      vehicleNo: sale.vehicleNo || ''
+      vehicleNo: sale.vehicleNo || '',
+      eInvoiceNo: sale.eInvoiceNo || ''
     });
     setEditItems(sale.items.map(it => ({
       productId: it.productId,
@@ -279,6 +280,7 @@ export function MySales() {
         modeOfPayment: editForm.modeOfPayment,
         destination: editForm.destination,
         vehicleNo: editForm.vehicleNo,
+        eInvoiceNo: editForm.eInvoiceNo,
         items: editItems,
       });
       await fetchSales({ salesmanId: currentUser?.id });
@@ -622,6 +624,10 @@ export function MySales() {
               <div className="form-group">
                 <label className="form-label">Vehicle No.</label>
                 <input className="form-input" value={editForm.vehicleNo} onChange={e => setEditForm({ ...editForm, vehicleNo: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">E-Invoice No.</label>
+                <input className="form-input" value={editForm.eInvoiceNo} onChange={e => setEditForm({ ...editForm, eInvoiceNo: e.target.value })} placeholder="IRN from GST e-invoice portal" />
               </div>
 
               {/* Items (editable) */}

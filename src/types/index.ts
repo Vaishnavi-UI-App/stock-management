@@ -262,6 +262,7 @@ export interface Sale {
   destination?: string;
   poNumber?: string;
   vehicleNo?: string;
+  eInvoiceNo?: string;
   billLocation?: string;
   saleDate: Date;
   createdAt: Date;

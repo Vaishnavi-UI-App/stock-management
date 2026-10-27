@@ -1627,10 +1627,13 @@ app.put('/api/sales/:id', authMiddleware, async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Delete existing items
-      await tx.saleItem.deleteMany({
-        where: { saleId: id }
-      });
+      // Only replace items when the request actually sent a new item list —
+      // a partial update (e.g. editing just discount or eInvoiceNo) must not wipe them.
+      if (items) {
+        await tx.saleItem.deleteMany({
+          where: { saleId: id }
+        });
+      }
 
       // Update sale with new items
       const sale = await tx.sale.update({
@@ -2404,10 +2407,13 @@ app.put('/api/orders/:id', authMiddleware, async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Delete existing items
-      await tx.orderItem.deleteMany({
-        where: { orderId: id }
-      });
+      // Only replace items when the request actually sent a new item list —
+      // a partial update must not wipe them.
+      if (items) {
+        await tx.orderItem.deleteMany({
+          where: { orderId: id }
+        });
+      }
 
       // Update order with new items
       const order = await tx.order.update({
